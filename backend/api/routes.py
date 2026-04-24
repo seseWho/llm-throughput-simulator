@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from backend.core.config_loader import ConfigLoader
@@ -5,9 +7,17 @@ from backend.core.request_models import GenerateRequest
 from backend.core.response_models import GenerateResponse
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
 from backend.policies.policy_engine import PolicyEngine
+from backend.queue.admission_controller import AdmissionController
+from backend.queue.priority_scheduler import PriorityScheduler
+from backend.queue.queue_manager import QueueManager
 
 router = APIRouter()
 policy_engine = PolicyEngine()
+admission_controller = AdmissionController()
+priority_scheduler = PriorityScheduler()
+queue_manager = QueueManager()
+active_requests = 0
+active_requests_lock = asyncio.Lock()
 
 
 @router.post("/generate", response_model=GenerateResponse)
@@ -38,16 +48,59 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     if model_config.get("backend") != "simulated":
         raise HTTPException(
             status_code=400,
-            detail="Only simulated backend is supported in Step 4.",
+            detail="Only simulated backend is supported in Step 5.",
         )
 
+    global active_requests
+    async with active_requests_lock:
+        admission_decision = admission_controller.decide(
+            queue_size=queue_manager.size(),
+            active_requests=active_requests,
+            limits_config=limits,
+            project_priority=policy_result["project_priority"],
+            request_type=request.request_type,
+        )
+
+        if admission_decision["decision"] == "accept":
+            active_requests += 1
+        elif admission_decision["decision"] == "queue":
+            priority_score = priority_scheduler.get_priority_score(
+                project_priority=policy_result["project_priority"],
+                request_type=request.request_type,
+                limits_config=limits,
+            )
+            queue_id = await queue_manager.enqueue(
+                priority_score=priority_score,
+                payload={
+                    "request": request.model_dump(),
+                    "policy": policy_result,
+                },
+            )
+            return GenerateResponse(
+                request_id=queue_id,
+                status="queued",
+                message="Request queued for later processing",
+                estimated_input_tokens=policy_result["estimated_input_tokens"],
+                estimated_output_tokens=policy_result["estimated_output_tokens"],
+                estimated_cost_eur=policy_result["estimated_cost_eur"],
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Request rejected by admission controller: {admission_decision['reason']}",
+            )
+
     backend = SimulatedLLMBackend()
-    response = await backend.generate(request, model_config)
-    policy_engine.quota_manager.consume(
-        request.project_id,
-        policy_result["estimated_total_tokens"],
-    )
-    return response
+    try:
+        response = await backend.generate(request, model_config)
+        policy_engine.quota_manager.consume(
+            request.project_id,
+            policy_result["estimated_total_tokens"],
+        )
+        return response
+    finally:
+        async with active_requests_lock:
+            active_requests -= 1
 
 
 def _policy_status_code(reason: str) -> int:
@@ -64,6 +117,23 @@ def _policy_status_code(reason: str) -> int:
 async def metrics() -> dict[str, str]:
     """Return placeholder metrics."""
     return {"status": "placeholder", "message": "Metrics collection is not implemented yet."}
+
+
+@router.get("/queue/status")
+async def queue_status() -> dict[str, int]:
+    """Return in-memory queue and active request status."""
+    config_loader = ConfigLoader()
+    global_limits = config_loader.configs["limits.yaml"]["global_limits"]
+
+    async with active_requests_lock:
+        current_active_requests = active_requests
+
+    return {
+        "queue_size": queue_manager.size(),
+        "active_requests": current_active_requests,
+        "max_active_requests": int(global_limits["max_active_requests"]),
+        "max_queue_size": int(global_limits["max_queue_size"]),
+    }
 
 
 @router.get("/config/summary")

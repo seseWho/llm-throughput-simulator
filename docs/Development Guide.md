@@ -331,3 +331,81 @@ Expected response:
 ```
 
 PowerShell note: `Invoke-RestMethod` and `Invoke-WebRequest` report non-2xx HTTP responses as exceptions. That does not mean the API failed. For negative validation checks, the exception is expected; inspect the status code and JSON detail in the `catch` block.
+
+## Step 5 Admission And Queue Validation
+
+Step 5 adds the Admission Controller and Priority Queue foundation. A valid `/generate` request now follows this path:
+
+```text
+Policy Engine -> Admission Controller -> immediate processing or queue or reject
+```
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+21 passed
+```
+
+These tests validate:
+
+- admission accepts when active capacity is available
+- admission queues when active capacity is full and queue capacity exists
+- admission rejects when active capacity and queue capacity are both full
+- high project priority scores above normal priority
+- interactive requests score above batch requests with the same project priority
+- the queue dequeues higher priority before lower priority
+- `/queue/status` returns the expected fields
+- `/generate` still works for a valid `simulated-small` request
+
+Start the API:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Check queue status:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/queue/status"
+```
+
+Expected response shape:
+
+```text
+queue_size          : 0
+active_requests     : 0
+max_active_requests : 50
+max_queue_size      : 1000
+```
+
+Send a valid request:
+
+```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "hello from step 5"
+  max_tokens = 64
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected behavior:
+
+- HTTP `200`
+- `status` is `completed`
+- `/queue/status` should usually still show `queue_size` as `0`
+
+Manual queue-path note: the default `config/limits.yaml` has `max_active_requests: 50`, so ordinary manual testing usually processes requests immediately. The queue path is covered by tests in this step. Queued requests are stored in memory but are not processed by background workers yet.

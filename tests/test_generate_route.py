@@ -26,6 +26,17 @@ def test_generate_works_with_simulated_small() -> None:
     assert data["estimated_cost_eur"] >= 0
 
 
+def test_queue_status_returns_expected_fields() -> None:
+    response = client.get("/queue/status")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "queue_size" in data
+    assert "active_requests" in data
+    assert "max_active_requests" in data
+    assert "max_queue_size" in data
+
+
 def test_generate_rejects_nonexistent_model() -> None:
     response = client.post(
         "/generate",
