@@ -41,11 +41,11 @@ POST /metrics/reset
 
 ## Development Notes
 
-See [docs/Development Guide.md](docs/Development%20Guide.md) for setup, mini-check commands, endpoint smoke tests, current limitations, and suggested next implementation steps.
+See [docs/development-guide.md](docs/development-guide.md) for setup, mini-check commands, endpoint smoke tests, current limitations, and suggested next implementation steps.
 
 ## Current Status
 
-Step 7 is implemented: the simulator now collects in-memory metrics for request flow, queueing, completions, failures, token usage, estimated cost, and latency.
+Step 8 is implemented: the project now includes a local async stress tester using `httpx`, scenario definitions, and CSV/JSON report output.
 
 Implemented foundations:
 
@@ -61,6 +61,8 @@ Implemented foundations:
 - request status endpoint
 - metrics summary endpoint
 - metrics reset endpoint
+- local async stress tester
+- CSV and JSON stress test reports
 
 Current limitations:
 
@@ -75,8 +77,10 @@ Current limitations:
 - no distributed workers
 - no Prometheus or Grafana integration yet
 - no persistent reporting yet
+- local async stress tester only
+- no distributed load generation
+- queued results are not automatically polled by the stress tester yet
 - no Ollama integration yet
-- no stress tester yet
 
 ## Generate Example
 
@@ -98,9 +102,36 @@ If a request is queued, use the returned `request_id` to check its status:
 curl http://127.0.0.1:8000/requests/<request_id>
 ```
 
+## Stress Tester
+
+Start the backend:
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+Run a scenario:
+
+```bash
+python -m stress_tester.load_generator --base-url http://localhost:8000 --scenario normal_load
+```
+
+Available scenarios:
+
+- `normal_load`
+- `burst_load`
+- `vip_protection`
+- `abusive_user`
+- `mixed_load`
+
+Reports are written to:
+
+- `reports/latest_results.csv`
+- `reports/latest_summary.json`
+
 ## Future Steps
 
 1. implement config validation
 2. implement persistent reporting
-3. implement stress tester
+3. poll queued results in stress tester
 4. integrate Ollama

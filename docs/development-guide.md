@@ -57,7 +57,7 @@ python -m pytest
 Expected result:
 
 ```text
-32 passed
+37 passed
 ```
 
 Start the FastAPI backend:
@@ -630,3 +630,126 @@ Metrics limitations:
 - metrics are lost when the FastAPI process restarts
 - there is no Prometheus or Grafana integration yet
 - there is no persistent reporting yet
+
+## Step 8 Stress Tester Validation
+
+Step 8 adds a local async stress tester using `httpx`. It can send concurrent `/generate` requests to a running backend and write CSV/JSON reports under `reports/`.
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+37 passed
+```
+
+These tests validate:
+
+- the scenario registry contains `normal_load`
+- empty result summaries work
+- status code distributions are calculated
+- CSV reports can be written
+- JSON summaries can be written
+- no running FastAPI server is required for unit tests
+
+Start the backend in terminal 1:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Optionally reset metrics in terminal 2:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/metrics/reset"
+```
+
+Run the stress tester:
+
+```powershell
+python -m stress_tester.load_generator `
+  --base-url http://127.0.0.1:8000 `
+  --scenario normal_load
+```
+
+Expected console output shape:
+
+```text
+Scenario: normal_load
+Total requests: 100
+Successful HTTP requests: ...
+Failed HTTP requests: ...
+Reports written to reports/latest_results.csv and reports/latest_summary.json
+```
+
+Check generated reports:
+
+```powershell
+Get-ChildItem reports
+```
+
+Expected files:
+
+```text
+latest_results.csv
+latest_summary.json
+```
+
+View the summary:
+
+```powershell
+Get-Content reports/latest_summary.json
+```
+
+Expected important fields:
+
+```json
+{
+  "total_requests": 100,
+  "successful_http_requests": 100,
+  "failed_http_requests": 0,
+  "accepted_or_completed": 100,
+  "queued": 0,
+  "average_latency_seconds": 0.0
+}
+```
+
+Exact values may vary depending on rate limits, queueing, and current server state.
+
+Check backend metrics after the run:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/metrics"
+```
+
+Expected counters should reflect the stress test traffic:
+
+- `total_requests`
+- `accepted_requests`
+- `queued_requests`
+- `completed_requests`
+- `rejected_requests`
+- `requests_by_user`
+- `requests_by_model`
+
+Available scenarios:
+
+- `normal_load`
+- `burst_load`
+- `vip_protection`
+- `abusive_user`
+- `mixed_load`
+
+Stress tester limitations:
+
+- local async load generation only
+- no distributed load generation
+- no external load testing tools
+- no Ollama backend yet
+- queued results are not automatically polled by the stress tester in this step
