@@ -57,7 +57,7 @@ python -m pytest
 Expected result:
 
 ```text
-37 passed
+40 passed
 ```
 
 Start the FastAPI backend:
@@ -752,4 +752,126 @@ Stress tester limitations:
 - no distributed load generation
 - no external load testing tools
 - no Ollama backend yet
-- queued results are not automatically polled by the stress tester in this step
+
+## Step 9 Stress Tester Polling Validation
+
+Step 9 improves the stress tester so queued requests can be polled through `GET /requests/{request_id}` until they reach a final status or timeout. Reports now include both initial `/generate` latency and end-to-end latency.
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+40 passed
+```
+
+These tests validate:
+
+- final backend status distributions are reported
+- end-to-end latency percentiles are calculated
+- timed-out final results are counted
+- CSV output includes polling fields
+- existing Step 1-8 behavior still works
+
+Start the backend in terminal 1:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Reset metrics in terminal 2:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/metrics/reset"
+```
+
+Run a polling-enabled stress test:
+
+```powershell
+python -m stress_tester.load_generator `
+  --base-url http://127.0.0.1:8000 `
+  --scenario burst_load `
+  --poll-queued true `
+  --poll-timeout 30
+```
+
+Polling is enabled by default. `--poll-queued false` disables result polling.
+
+Expected console output shape:
+
+```text
+Scenario: burst_load
+Total requests: 200
+Successful HTTP requests: ...
+Failed HTTP requests: ...
+Reports written to reports/latest_results.csv and reports/latest_summary.json
+```
+
+Check the summary report:
+
+```powershell
+Get-Content reports/latest_summary.json
+```
+
+Look for Step 9 fields:
+
+```json
+{
+  "completed_final": 0,
+  "failed_final": 0,
+  "timed_out_final": 0,
+  "queued_initial": 0,
+  "completed_immediate": 0,
+  "average_end_to_end_latency_seconds": 0.0,
+  "p50_end_to_end_latency_seconds": 0.0,
+  "p95_end_to_end_latency_seconds": 0.0,
+  "p99_end_to_end_latency_seconds": 0.0,
+  "final_backend_status_distribution": {}
+}
+```
+
+Exact values depend on server state, rate limits, queueing, and whether requests complete immediately.
+
+Check the CSV header:
+
+```powershell
+Get-Content reports/latest_results.csv -TotalCount 1
+```
+
+Expected header includes:
+
+```text
+final_backend_status,final_latency_seconds,end_to_end_latency_seconds,polling_attempts,polling_error
+```
+
+Check backend metrics after the run:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/metrics"
+```
+
+Expected counters should reflect the stress run:
+
+- `total_requests`
+- `accepted_requests`
+- `queued_requests`
+- `completed_requests`
+- `rejected_requests`
+
+Latency definitions:
+
+- initial latency: time to receive the first `/generate` response
+- end-to-end latency: time until a queued request reaches `completed`, `failed`, `rejected`, or `timed_out`
+
+Current limitations:
+
+- polling is local to the stress tester process
+- no distributed load generation
+- no external load testing tools
+- no Ollama backend yet

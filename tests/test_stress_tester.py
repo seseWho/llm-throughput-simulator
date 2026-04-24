@@ -33,6 +33,81 @@ def test_summarize_results_calculates_status_code_distribution() -> None:
     assert summary["failed_http_requests"] == 1
 
 
+def test_summarize_results_includes_final_backend_status_distribution() -> None:
+    summary = summarize_results(
+        [
+            {
+                "http_status": 200,
+                "backend_status": "queued",
+                "final_backend_status": "completed",
+                "latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 0.5,
+            },
+            {
+                "http_status": 200,
+                "backend_status": "queued",
+                "final_backend_status": "failed",
+                "latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 0.4,
+            },
+        ]
+    )
+
+    assert summary["final_backend_status_distribution"] == {"completed": 1, "failed": 1}
+    assert summary["completed_final"] == 1
+    assert summary["failed_final"] == 1
+
+
+def test_summarize_results_calculates_end_to_end_latency_percentiles() -> None:
+    summary = summarize_results(
+        [
+            {
+                "http_status": 200,
+                "backend_status": "completed",
+                "final_backend_status": "completed",
+                "latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 0.1,
+            },
+            {
+                "http_status": 200,
+                "backend_status": "queued",
+                "final_backend_status": "completed",
+                "latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 0.5,
+            },
+            {
+                "http_status": 200,
+                "backend_status": "queued",
+                "final_backend_status": "completed",
+                "latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 0.9,
+            },
+        ]
+    )
+
+    assert summary["average_end_to_end_latency_seconds"] == 0.5
+    assert summary["p50_end_to_end_latency_seconds"] == 0.5
+    assert summary["p95_end_to_end_latency_seconds"] == 0.9
+    assert summary["p99_end_to_end_latency_seconds"] == 0.9
+
+
+def test_summarize_results_handles_timed_out_results() -> None:
+    summary = summarize_results(
+        [
+            {
+                "http_status": 200,
+                "backend_status": "queued",
+                "final_backend_status": "timed_out",
+                "latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 30.0,
+            }
+        ]
+    )
+
+    assert summary["timed_out_final"] == 1
+    assert summary["final_backend_status_distribution"]["timed_out"] == 1
+
+
 def test_write_csv_creates_file(tmp_path) -> None:
     output_path = tmp_path / "results.csv"
 
@@ -48,6 +123,11 @@ def test_write_csv_creates_file(tmp_path) -> None:
                 "backend_status": "completed",
                 "request_id": "request-1",
                 "latency_seconds": 0.1,
+                "final_backend_status": "completed",
+                "final_latency_seconds": 0.1,
+                "end_to_end_latency_seconds": 0.1,
+                "polling_attempts": 0,
+                "polling_error": None,
                 "error": None,
             }
         ],
@@ -55,7 +135,11 @@ def test_write_csv_creates_file(tmp_path) -> None:
     )
 
     assert output_path.exists()
-    assert "request_index" in output_path.read_text(encoding="utf-8")
+    content = output_path.read_text(encoding="utf-8")
+    assert "request_index" in content
+    assert "final_backend_status" in content
+    assert "end_to_end_latency_seconds" in content
+    assert "polling_attempts" in content
 
 
 def test_write_json_creates_file(tmp_path) -> None:

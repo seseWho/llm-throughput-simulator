@@ -8,19 +8,28 @@ def summarize_results(results: list[dict]) -> dict:
     """Return aggregate statistics for load generator results."""
     status_code_distribution: dict[str, int] = {}
     backend_status_distribution: dict[str, int] = {}
+    final_backend_status_distribution: dict[str, int] = {}
     latencies = []
+    end_to_end_latencies = []
 
     for result in results:
         status_code = str(result.get("http_status", "error"))
         backend_status = str(result.get("backend_status") or "unknown")
+        final_backend_status = str(result.get("final_backend_status") or "unknown")
         status_code_distribution[status_code] = status_code_distribution.get(status_code, 0) + 1
         backend_status_distribution[backend_status] = (
             backend_status_distribution.get(backend_status, 0) + 1
+        )
+        final_backend_status_distribution[final_backend_status] = (
+            final_backend_status_distribution.get(final_backend_status, 0) + 1
         )
 
         latency = result.get("latency_seconds")
         if latency is not None:
             latencies.append(float(latency))
+        end_to_end_latency = result.get("end_to_end_latency_seconds")
+        if end_to_end_latency is not None:
+            end_to_end_latencies.append(float(end_to_end_latency))
 
     successful_http_requests = sum(
         1 for result in results if 200 <= int(result.get("http_status", 0) or 0) < 300
@@ -34,12 +43,29 @@ def summarize_results(results: list[dict]) -> dict:
         "accepted_or_completed": _count_backend_status(results, {"accepted", "completed"}),
         "queued": _count_backend_status(results, {"queued"}),
         "rejected": failed_http_requests,
+        "completed_final": _count_final_backend_status(results, {"completed"}),
+        "failed_final": _count_final_backend_status(results, {"failed"}),
+        "timed_out_final": _count_final_backend_status(results, {"timed_out"}),
+        "queued_initial": _count_backend_status(results, {"queued"}),
+        "completed_immediate": sum(
+            1
+            for result in results
+            if result.get("backend_status") == "completed"
+            and result.get("final_backend_status") == "completed"
+        ),
         "average_latency_seconds": mean(latencies) if latencies else None,
         "p50_latency_seconds": _percentile(latencies, 50),
         "p95_latency_seconds": _percentile(latencies, 95),
         "p99_latency_seconds": _percentile(latencies, 99),
+        "average_end_to_end_latency_seconds": (
+            mean(end_to_end_latencies) if end_to_end_latencies else None
+        ),
+        "p50_end_to_end_latency_seconds": _percentile(end_to_end_latencies, 50),
+        "p95_end_to_end_latency_seconds": _percentile(end_to_end_latencies, 95),
+        "p99_end_to_end_latency_seconds": _percentile(end_to_end_latencies, 99),
         "status_code_distribution": status_code_distribution,
         "backend_status_distribution": backend_status_distribution,
+        "final_backend_status_distribution": final_backend_status_distribution,
     }
 
 
@@ -58,6 +84,11 @@ def write_csv(results: list[dict], output_path: str) -> None:
         "backend_status",
         "request_id",
         "latency_seconds",
+        "final_backend_status",
+        "final_latency_seconds",
+        "end_to_end_latency_seconds",
+        "polling_attempts",
+        "polling_error",
         "error",
     ]
     with path.open("w", newline="", encoding="utf-8") as file:
@@ -76,6 +107,10 @@ def write_json(summary: dict, output_path: str) -> None:
 
 def _count_backend_status(results: list[dict], statuses: set[str]) -> int:
     return sum(1 for result in results if result.get("backend_status") in statuses)
+
+
+def _count_final_backend_status(results: list[dict], statuses: set[str]) -> int:
+    return sum(1 for result in results if result.get("final_backend_status") in statuses)
 
 
 def _percentile(values: list[float], percentile: int) -> float | None:
