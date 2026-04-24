@@ -1,4 +1,4 @@
-# llm-load-mvp
+# llm-throughput-simulator
 
 Python MVP project for simulating high-throughput LLM serving behavior.
 
