@@ -34,6 +34,7 @@ The health endpoint is available at:
 ```text
 GET /health
 GET /queue/status
+GET /requests/{request_id}
 ```
 
 ## Development Notes
@@ -42,7 +43,7 @@ See [docs/Development Guide.md](docs/Development%20Guide.md) for setup, mini-che
 
 ## Current Status
 
-Step 5 is implemented: the `/generate` endpoint now evaluates policy, then uses an Admission Controller to either process immediately, enqueue, or reject. A simple in-memory priority queue foundation is available for queued requests.
+Step 6 is implemented: queued requests are now processed by in-memory background workers. The `/generate` endpoint can process immediately, enqueue for background processing, or reject according to policy and admission decisions.
 
 Implemented foundations:
 
@@ -53,16 +54,19 @@ Implemented foundations:
 - estimated token cost calculation
 - admission control
 - in-memory priority queue foundation
+- background queue workers
 - queue status endpoint
+- request status endpoint
 
 Current limitations:
 
 - usage is stored in memory only
 - rate limiting uses a simple fixed window
-- queued requests are stored but not processed by background workers yet
 - queue is in-memory only
 - no persistence yet
+- queue and results are lost on restart
 - no distributed queue
+- no distributed workers
 - no Ollama integration yet
 - no stress tester yet
 
@@ -80,11 +84,17 @@ curl -X POST http://127.0.0.1:8000/generate \
   }'
 ```
 
+If a request is queued, use the returned `request_id` to check its status:
+
+```bash
+curl http://127.0.0.1:8000/requests/<request_id>
+```
+
 ## Future Steps
 
 1. implement config validation
 2. implement rate limiter
 3. implement quota manager
-4. implement background queue workers
+4. implement config validation
 5. implement stress tester
 6. integrate Ollama

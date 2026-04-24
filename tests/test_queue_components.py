@@ -1,8 +1,13 @@
 import asyncio
 
+from backend.core.config_loader import ConfigLoader
+from backend.core.request_models import GenerateRequest
+from backend.llm_backends.simulated_backend import SimulatedLLMBackend
+from backend.policies.policy_engine import PolicyEngine
 from backend.queue.admission_controller import AdmissionController
 from backend.queue.priority_scheduler import PriorityScheduler
 from backend.queue.queue_manager import QueueManager
+from backend.queue.worker_manager import WorkerManager
 
 
 def test_admission_controller_accepts_when_active_capacity_available() -> None:
@@ -82,6 +87,92 @@ def test_queue_manager_dequeues_high_priority_before_low_priority() -> None:
         assert second["queue_id"]
 
     asyncio.run(run_queue_check())
+
+
+def test_queue_manager_can_store_and_retrieve_result() -> None:
+    queue_manager = QueueManager()
+
+    queue_manager.set_result(
+        "request-1",
+        {
+            "request_id": "request-1",
+            "status": "completed",
+            "message": "done",
+        },
+    )
+
+    result = queue_manager.get_result("request-1")
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert queue_manager.completed_count() == 1
+
+
+def test_queue_manager_can_mark_failed_request() -> None:
+    queue_manager = QueueManager()
+
+    queue_manager.mark_failed("request-1", "failed for test")
+
+    result = queue_manager.get_result("request-1")
+
+    assert result is not None
+    assert result["status"] == "failed"
+    assert result["message"] == "failed for test"
+    assert queue_manager.failed_count() == 1
+
+
+def test_worker_manager_can_process_one_queued_simulated_request() -> None:
+    async def run_worker_check() -> None:
+        queue_manager = QueueManager()
+        policy_engine = PolicyEngine()
+        worker_manager = WorkerManager(
+            queue_manager=queue_manager,
+            simulated_backend=SimulatedLLMBackend(),
+            policy_engine=policy_engine,
+            config_loader=ConfigLoader(),
+            number_of_workers=1,
+        )
+        request = GenerateRequest(
+            user_id="user_standard_01",
+            project_id="standard_project",
+            model="simulated-small",
+            prompt="hello",
+            max_tokens=64,
+        )
+
+        request_id = await queue_manager.enqueue(
+            priority_score=5,
+            payload={
+                "request": request.model_dump(),
+                "model_config": {
+                    "max_output_tokens": 512,
+                    "average_latency_seconds": 0,
+                    "input_cost_per_1k_tokens_eur": 0.0001,
+                    "output_cost_per_1k_tokens_eur": 0.0002,
+                },
+                "policy": {
+                    "estimated_total_tokens": 65,
+                },
+            },
+        )
+
+        worker_manager.start()
+        try:
+            result = None
+            for _ in range(20):
+                result = queue_manager.get_result(request_id)
+                if result is not None and result["status"] == "completed":
+                    break
+                await asyncio.sleep(0.01)
+
+            assert result is not None
+            assert result["status"] == "completed"
+            assert result["request_id"] == request_id
+            assert policy_engine.quota_manager.get_project_usage("standard_project") == 65
+        finally:
+            await worker_manager.stop()
+
+    asyncio.run(run_worker_check())
 
 
 def _limits_config(

@@ -409,3 +409,110 @@ Expected behavior:
 - `/queue/status` should usually still show `queue_size` as `0`
 
 Manual queue-path note: the default `config/limits.yaml` has `max_active_requests: 50`, so ordinary manual testing usually processes requests immediately. The queue path is covered by tests in this step. Queued requests are stored in memory but are not processed by background workers yet.
+
+## Step 6 Background Worker Validation
+
+Step 6 adds in-memory background workers for queued requests. The request path is now:
+
+```text
+Policy Engine -> Admission Controller -> immediate processing or queue -> background worker -> result lookup
+```
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+26 passed
+```
+
+These tests validate:
+
+- queue result storage
+- failed request marking
+- a worker can process one queued simulated request
+- `/requests/{request_id}` returns `not_found` for unknown IDs
+- `/generate` can return `queued` when capacity is saturated
+- existing Step 1-5 behavior still works
+
+Start the API:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Check queue and worker status:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/queue/status"
+```
+
+Expected response shape:
+
+```text
+queue_size          : 0
+active_requests     : 0
+max_active_requests : 50
+max_queue_size      : 1000
+worker_running      : True
+worker_count        : 3
+completed_requests  : 0
+failed_requests     : 0
+```
+
+Check an unknown request ID:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/requests/unknown-id"
+```
+
+Expected response:
+
+```text
+request_id : unknown-id
+status     : not_found
+message    : Request not found
+```
+
+Send a valid request:
+
+```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "hello from step 6"
+  max_tokens = 64
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected behavior:
+
+- HTTP `200`
+- `status` is usually `completed`
+
+If a request returns `queued`, copy the returned `request_id` and check it:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/requests/<request_id>"
+```
+
+Possible statuses:
+
+- `queued`
+- `processing`
+- `completed`
+- `failed`
+- `not_found`
+
+Manual queue-path note: the default `config/limits.yaml` has `max_active_requests: 50`, so ordinary manual requests usually process immediately. The background worker path is covered by automated tests in this step. Workers, queue state, and request results are in-memory only and are lost when the FastAPI process restarts.

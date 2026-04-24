@@ -10,12 +10,20 @@ from backend.policies.policy_engine import PolicyEngine
 from backend.queue.admission_controller import AdmissionController
 from backend.queue.priority_scheduler import PriorityScheduler
 from backend.queue.queue_manager import QueueManager
+from backend.queue.worker_manager import WorkerManager
 
 router = APIRouter()
 policy_engine = PolicyEngine()
 admission_controller = AdmissionController()
 priority_scheduler = PriorityScheduler()
 queue_manager = QueueManager()
+simulated_backend = SimulatedLLMBackend()
+worker_manager = WorkerManager(
+    queue_manager=queue_manager,
+    simulated_backend=simulated_backend,
+    policy_engine=policy_engine,
+    config_loader=ConfigLoader(),
+)
 active_requests = 0
 active_requests_lock = asyncio.Lock()
 
@@ -73,13 +81,14 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
                 priority_score=priority_score,
                 payload={
                     "request": request.model_dump(),
+                    "model_config": model_config,
                     "policy": policy_result,
                 },
             )
             return GenerateResponse(
                 request_id=queue_id,
                 status="queued",
-                message="Request queued for later processing",
+                message="Request queued for background processing",
                 estimated_input_tokens=policy_result["estimated_input_tokens"],
                 estimated_output_tokens=policy_result["estimated_output_tokens"],
                 estimated_cost_eur=policy_result["estimated_cost_eur"],
@@ -90,9 +99,8 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
                 detail=f"Request rejected by admission controller: {admission_decision['reason']}",
             )
 
-    backend = SimulatedLLMBackend()
     try:
-        response = await backend.generate(request, model_config)
+        response = await simulated_backend.generate(request, model_config)
         policy_engine.quota_manager.consume(
             request.project_id,
             policy_result["estimated_total_tokens"],
@@ -120,7 +128,7 @@ async def metrics() -> dict[str, str]:
 
 
 @router.get("/queue/status")
-async def queue_status() -> dict[str, int]:
+async def queue_status() -> dict[str, object]:
     """Return in-memory queue and active request status."""
     config_loader = ConfigLoader()
     global_limits = config_loader.configs["limits.yaml"]["global_limits"]
@@ -133,7 +141,24 @@ async def queue_status() -> dict[str, int]:
         "active_requests": current_active_requests,
         "max_active_requests": int(global_limits["max_active_requests"]),
         "max_queue_size": int(global_limits["max_queue_size"]),
+        "worker_running": worker_manager.is_running(),
+        "worker_count": worker_manager.number_of_workers,
+        "completed_requests": queue_manager.completed_count(),
+        "failed_requests": queue_manager.failed_count(),
     }
+
+
+@router.get("/requests/{request_id}")
+async def request_status(request_id: str) -> dict[str, object]:
+    """Return queued request status or result."""
+    result = queue_manager.get_result(request_id)
+    if result is None:
+        return {
+            "request_id": request_id,
+            "status": "not_found",
+            "message": "Request not found",
+        }
+    return result
 
 
 @router.get("/config/summary")
