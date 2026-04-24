@@ -35,6 +35,10 @@ The health endpoint is available at:
 GET /health
 ```
 
+## Development Notes
+
+See [docs/Development Guide.md](docs/Development%20Guide.md) for setup, mini-check commands, endpoint smoke tests, current limitations, and suggested next implementation steps.
+
 ## Current Status
 
 Basic structure only. Full serving, queueing, policy, quota, backend, and stress testing logic has not been implemented yet.
