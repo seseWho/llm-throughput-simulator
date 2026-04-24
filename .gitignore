@@ -16,4 +16,6 @@ build/
 .env
 .env.*
 !.env.example
+data/*.db
+data/*.sqlite
 reports/

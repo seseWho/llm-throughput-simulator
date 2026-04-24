@@ -1328,3 +1328,149 @@ Expected behavior:
 - it may still be processed immediately or queued depending on admission capacity
 
 After manual testing, restore the original `config/limits.yaml` values.
+
+## Step 13 SQLite Usage Accounting Validation
+
+Step 13 adds persistent usage accounting with SQLite. Runtime metrics are still in-memory, but request lifecycle and usage records are now stored in:
+
+```text
+data/usage.db
+```
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+69 passed
+```
+
+These tests validate:
+
+- SQLite database initialization
+- `usage_records` table creation
+- usage record creation
+- status updates
+- completion recording
+- failure recording
+- global usage summary
+- project usage summary
+- user usage summary
+- recent usage records
+- existing Step 1-12 behavior still works
+
+Start the backend:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Send a valid simulated request:
+
+```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "Validate SQLite usage accounting"
+  max_tokens = 64
+  request_type = "interactive"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected behavior:
+
+- HTTP `200`
+- `status` is usually `completed`
+- a `request_id` is returned
+- a usage record is written to SQLite
+
+Check the global usage summary:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/usage/summary"
+```
+
+Expected important fields:
+
+```text
+total_records
+total_input_tokens
+total_output_tokens
+total_tokens
+total_estimated_cost_eur
+records_by_status
+records_by_project
+records_by_user
+records_by_model
+records_by_backend
+```
+
+Check recent usage records:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/usage/recent?limit=5"
+```
+
+Expected record fields include:
+
+```text
+request_id
+user_id
+project_id
+model
+backend
+request_type
+priority
+status
+decision
+degradation_level
+input_tokens
+output_tokens
+total_tokens
+estimated_cost_eur
+created_at
+updated_at
+```
+
+Check project-level usage:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/usage/project/standard_project"
+```
+
+Check user-level usage:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/usage/user/user_standard_01"
+```
+
+Persistence check:
+
+1. Send one or more `/generate` requests.
+2. Stop Uvicorn with `Ctrl+C`.
+3. Start Uvicorn again.
+4. Call `/usage/summary` again.
+
+Expected behavior:
+
+- usage records should still be present after restart
+- `/metrics` may reset after restart because metrics are still in-memory
+
+Current persistence limitations:
+
+- SQLite is local only
+- not designed for distributed production deployment
+- no retention policy yet
+- no authentication on usage endpoints yet
+- in-memory metrics and SQLite persistence may differ after restart

@@ -3,11 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from backend.api.routes import router, worker_manager
+from backend.persistence.database import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start and stop background queue workers with the application."""
+    init_db()
     worker_manager.start()
     try:
         yield

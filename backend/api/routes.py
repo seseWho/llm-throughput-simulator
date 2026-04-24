@@ -1,5 +1,6 @@
 import asyncio
 import time
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
@@ -9,6 +10,7 @@ from backend.core.response_models import GenerateResponse
 from backend.llm_backends.backend_factory import get_llm_backend
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
 from backend.metrics.metrics_collector import MetricsCollector
+from backend.persistence.usage_repository import UsageRepository
 from backend.policies.degradation_manager import DegradationManager
 from backend.policies.policy_engine import PolicyEngine
 from backend.queue.admission_controller import AdmissionController
@@ -24,12 +26,14 @@ priority_scheduler = PriorityScheduler()
 queue_manager = QueueManager()
 simulated_backend = SimulatedLLMBackend()
 metrics_collector = MetricsCollector()
+usage_repository = UsageRepository()
 worker_manager = WorkerManager(
     queue_manager=queue_manager,
     simulated_backend=simulated_backend,
     policy_engine=policy_engine,
     config_loader=ConfigLoader(),
     metrics_collector=metrics_collector,
+    usage_repository=usage_repository,
 )
 active_requests = 0
 active_requests_lock = asyncio.Lock()
@@ -55,6 +59,24 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     )
 
     if not policy_result["allowed"]:
+        request_id = str(uuid4())
+        usage_repository.create_record(
+            request_id=request_id,
+            user_id=request.user_id,
+            project_id=request.project_id,
+            model=request.model,
+            backend=_backend_name(models.get(request.model)),
+            request_type=request.request_type,
+            priority=policy_result.get("project_priority"),
+            status="rejected",
+            decision="policy_rejected",
+            degradation_level=None,
+            input_tokens=policy_result.get("estimated_input_tokens", 0),
+            output_tokens=policy_result.get("estimated_output_tokens", 0),
+            total_tokens=policy_result.get("estimated_total_tokens", 0),
+            estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+            error_message=policy_result["reason"],
+        )
         metrics_collector.record_rejected(request, policy_result["reason"])
         raise HTTPException(
             status_code=_policy_status_code(policy_result["reason"]),
@@ -76,6 +98,24 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
         metrics_collector.record_degraded(request, degradation_result)
 
     if not degradation_result["allowed"]:
+        request_id = str(uuid4())
+        usage_repository.create_record(
+            request_id=request_id,
+            user_id=request.user_id,
+            project_id=request.project_id,
+            model=request.model,
+            backend=_backend_name(models.get(request.model)),
+            request_type=request.request_type,
+            priority=policy_result.get("project_priority"),
+            status="rejected",
+            decision="degradation_rejected",
+            degradation_level=degradation_result["degradation_level"],
+            input_tokens=policy_result.get("estimated_input_tokens", 0),
+            output_tokens=policy_result.get("estimated_output_tokens", 0),
+            total_tokens=policy_result.get("estimated_total_tokens", 0),
+            estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+            error_message=degradation_result["reason"],
+        )
         metrics_collector.record_rejected(request, degradation_result["reason"])
         raise HTTPException(status_code=503, detail=degradation_result["reason"])
 
@@ -91,6 +131,24 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
             limits_config=limits,
         )
         if not policy_result["allowed"]:
+            request_id = str(uuid4())
+            usage_repository.create_record(
+                request_id=request_id,
+                user_id=request.user_id,
+                project_id=request.project_id,
+                model=request.model,
+                backend=_backend_name(models.get(request.model)),
+                request_type=request.request_type,
+                priority=policy_result.get("project_priority"),
+                status="rejected",
+                decision="policy_rejected",
+                degradation_level=degradation_result["degradation_level"],
+                input_tokens=policy_result.get("estimated_input_tokens", 0),
+                output_tokens=policy_result.get("estimated_output_tokens", 0),
+                total_tokens=policy_result.get("estimated_total_tokens", 0),
+                estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+                error_message=policy_result["reason"],
+            )
             metrics_collector.record_rejected(request, policy_result["reason"])
             raise HTTPException(
                 status_code=_policy_status_code(policy_result["reason"]),
@@ -102,6 +160,24 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     try:
         backend = get_llm_backend(model_config)
     except ValueError as exc:
+        request_id = str(uuid4())
+        usage_repository.create_record(
+            request_id=request_id,
+            user_id=request.user_id,
+            project_id=request.project_id,
+            model=request.model,
+            backend=_backend_name(model_config),
+            request_type=request.request_type,
+            priority=policy_result.get("project_priority"),
+            status="rejected",
+            decision="unsupported_backend",
+            degradation_level=degradation_result["degradation_level"],
+            input_tokens=policy_result.get("estimated_input_tokens", 0),
+            output_tokens=policy_result.get("estimated_output_tokens", 0),
+            total_tokens=policy_result.get("estimated_total_tokens", 0),
+            estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+            error_message=str(exc),
+        )
         metrics_collector.record_rejected(request, "unsupported_backend")
         raise HTTPException(
             status_code=400,
@@ -120,6 +196,23 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
 
         if admission_decision["decision"] == "accept":
             active_requests += 1
+            request_id = str(uuid4())
+            usage_repository.create_record(
+                request_id=request_id,
+                user_id=request.user_id,
+                project_id=request.project_id,
+                model=request.model,
+                backend=_backend_name(model_config),
+                request_type=request.request_type,
+                priority=policy_result.get("project_priority"),
+                status="processing",
+                decision="accept",
+                degradation_level=degradation_result["degradation_level"],
+                input_tokens=policy_result.get("estimated_input_tokens", 0),
+                output_tokens=policy_result.get("estimated_output_tokens", 0),
+                total_tokens=policy_result.get("estimated_total_tokens", 0),
+                estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+            )
             metrics_collector.record_accepted(request, policy_result)
         elif admission_decision["decision"] == "queue":
             priority_score = priority_scheduler.get_priority_score(
@@ -135,6 +228,22 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
                     "policy": policy_result,
                 },
             )
+            usage_repository.create_record(
+                request_id=queue_id,
+                user_id=request.user_id,
+                project_id=request.project_id,
+                model=request.model,
+                backend=_backend_name(model_config),
+                request_type=request.request_type,
+                priority=policy_result.get("project_priority"),
+                status="queued",
+                decision="queue",
+                degradation_level=degradation_result["degradation_level"],
+                input_tokens=policy_result.get("estimated_input_tokens", 0),
+                output_tokens=policy_result.get("estimated_output_tokens", 0),
+                total_tokens=policy_result.get("estimated_total_tokens", 0),
+                estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+            )
             metrics_collector.record_queued(request, policy_result)
             return GenerateResponse(
                 request_id=queue_id,
@@ -145,6 +254,24 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
                 estimated_cost_eur=policy_result["estimated_cost_eur"],
             )
         else:
+            request_id = str(uuid4())
+            usage_repository.create_record(
+                request_id=request_id,
+                user_id=request.user_id,
+                project_id=request.project_id,
+                model=request.model,
+                backend=_backend_name(model_config),
+                request_type=request.request_type,
+                priority=policy_result.get("project_priority"),
+                status="rejected",
+                decision="admission_rejected",
+                degradation_level=degradation_result["degradation_level"],
+                input_tokens=policy_result.get("estimated_input_tokens", 0),
+                output_tokens=policy_result.get("estimated_output_tokens", 0),
+                total_tokens=policy_result.get("estimated_total_tokens", 0),
+                estimated_cost_eur=policy_result.get("estimated_cost_eur", 0.0),
+                error_message=str(admission_decision["reason"]),
+            )
             metrics_collector.record_rejected(request, str(admission_decision["reason"]))
             raise HTTPException(
                 status_code=503,
@@ -154,6 +281,7 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     try:
         start_time = time.perf_counter()
         response = await backend.generate(request, model_config)
+        response.request_id = request_id
         latency_seconds = time.perf_counter() - start_time
         policy_engine.quota_manager.consume(
             request.project_id,
@@ -164,8 +292,17 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
             response,
             latency_seconds=latency_seconds,
         )
+        usage_repository.record_completion(
+            request_id,
+            input_tokens=response.estimated_input_tokens,
+            output_tokens=response.estimated_output_tokens,
+            total_tokens=(response.estimated_input_tokens or 0) + (response.estimated_output_tokens or 0),
+            estimated_cost_eur=response.estimated_cost_eur,
+            latency_seconds=latency_seconds,
+        )
         return response
     except Exception as exc:
+        usage_repository.record_failure(request_id, str(exc))
         metrics_collector.record_failed(request, str(exc))
         raise
     finally:
@@ -183,6 +320,12 @@ def _policy_status_code(reason: str) -> int:
     return 400
 
 
+def _backend_name(model_config: dict | None) -> str | None:
+    if not model_config:
+        return None
+    return model_config.get("backend")
+
+
 @router.get("/metrics")
 async def metrics() -> dict[str, object]:
     """Return in-memory metrics summary."""
@@ -194,6 +337,30 @@ async def reset_metrics() -> dict[str, str]:
     """Reset in-memory metrics."""
     metrics_collector.reset()
     return {"status": "ok", "message": "Metrics reset"}
+
+
+@router.get("/usage/summary")
+async def usage_summary() -> dict[str, object]:
+    """Return persisted usage summary."""
+    return usage_repository.get_summary()
+
+
+@router.get("/usage/project/{project_id}")
+async def usage_project_summary(project_id: str) -> dict[str, object]:
+    """Return persisted usage summary for a project."""
+    return usage_repository.get_project_summary(project_id)
+
+
+@router.get("/usage/user/{user_id}")
+async def usage_user_summary(user_id: str) -> dict[str, object]:
+    """Return persisted usage summary for a user."""
+    return usage_repository.get_user_summary(user_id)
+
+
+@router.get("/usage/recent")
+async def usage_recent(limit: int = 50) -> list[dict]:
+    """Return recent persisted usage records."""
+    return usage_repository.get_recent_records(limit=limit)
 
 
 @router.get("/queue/status")

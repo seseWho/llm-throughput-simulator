@@ -37,6 +37,10 @@ GET /queue/status
 GET /requests/{request_id}
 GET /metrics
 POST /metrics/reset
+GET /usage/summary
+GET /usage/project/{project_id}
+GET /usage/user/{user_id}
+GET /usage/recent?limit=50
 ```
 
 ## Development Notes
@@ -45,7 +49,7 @@ See [docs/development-guide.md](docs/development-guide.md) for setup, mini-check
 
 ## Current Status
 
-Step 12 is implemented: degradation strategy is now driven by `config/degradation.yaml` so the service can progressively protect itself under queue pressure.
+Step 13 is implemented: request lifecycle and usage accounting are now persisted to local SQLite alongside the existing in-memory metrics.
 
 Implemented foundations:
 
@@ -69,16 +73,20 @@ Implemented foundations:
 - Ollama stress scenarios
 - backend and model comparison report
 - configuration-driven degradation strategy
+- SQLite persistent usage accounting
 
 Current limitations:
 
 - usage is stored in memory only
 - rate limiting uses a simple fixed window
 - queue is in-memory only
-- no persistence yet
 - queue and results are lost on restart
 - metrics are in-memory only
 - metrics are lost on restart
+- SQLite is local only
+- no retention policy yet
+- no authentication on usage endpoints yet
+- in-memory metrics and SQLite persistence may differ after restart
 - no distributed queue
 - no distributed workers
 - no Prometheus or Grafana integration yet
@@ -226,8 +234,35 @@ Current behavior:
 - queued payloads contain the degraded request, not the original request
 - `/queue/status` exposes the current degradation level and active actions
 
+## Persistent Usage Accounting
+
+SQLite persistence complements the in-memory metrics collector. The default database is:
+
+```text
+data/usage.db
+```
+
+Usage endpoints:
+
+```text
+GET /usage/summary
+GET /usage/project/{project_id}
+GET /usage/user/{user_id}
+GET /usage/recent?limit=50
+```
+
+Persisted records include request metadata, backend, status, admission decision, degradation level, token estimates, estimated cost, latency, queue wait, and error messages.
+
+Current persistence limitations:
+
+- SQLite is local to one process or machine
+- not designed for distributed production deployment
+- no retention policy yet
+- no authentication on usage endpoints yet
+- in-memory metrics reset on restart, while SQLite records remain
+
 ## Future Steps
 
 1. implement config validation
-2. implement persistent reporting
+2. implement persistent reporting dashboards
 3. add Ollama streaming support
