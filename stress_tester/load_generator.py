@@ -7,7 +7,12 @@ from typing import Any
 
 import httpx
 
-from stress_tester.report_writer import summarize_results, write_csv, write_json
+from stress_tester.report_writer import (
+    summarize_results,
+    write_comparison_markdown,
+    write_csv,
+    write_json,
+)
 from stress_tester.scenarios import get_scenario, list_scenarios
 
 USER_PROJECTS = {
@@ -98,6 +103,7 @@ async def _send_one_request(
             "user_id": user_id,
             "project_id": project_id,
             "model": model,
+            "backend_name": _infer_backend_name(model),
             "request_type": request_type,
             "http_status": None,
             "backend_status": None,
@@ -122,6 +128,7 @@ async def _send_one_request(
                 data = {}
 
             result["backend_status"] = data.get("status")
+            result["backend_name"] = data.get("backend_name") or result["backend_name"]
             result["request_id"] = data.get("request_id")
             result["final_backend_status"] = result["backend_status"]
             result["final_latency_seconds"] = result["latency_seconds"]
@@ -204,6 +211,14 @@ def _weighted_choice(distribution: dict[str, float]) -> str:
     return random.choices(names, weights=weights, k=1)[0]
 
 
+def _infer_backend_name(model: str) -> str:
+    if model.startswith("simulated"):
+        return "simulated"
+    if model.startswith("ollama"):
+        return "ollama"
+    return "unknown"
+
+
 async def _run_cli(args: argparse.Namespace) -> None:
     results = await run_load(
         args.base_url,
@@ -217,12 +232,16 @@ async def _run_cli(args: argparse.Namespace) -> None:
     reports_dir = Path("reports")
     write_csv(results, str(reports_dir / "latest_results.csv"))
     write_json(summary, str(reports_dir / "latest_summary.json"))
+    write_comparison_markdown(summary, str(reports_dir / "latest_comparison.md"))
 
     print(f"Scenario: {args.scenario}")
     print(f"Total requests: {summary['total_requests']}")
     print(f"Successful HTTP requests: {summary['successful_http_requests']}")
     print(f"Failed HTTP requests: {summary['failed_http_requests']}")
-    print("Reports written to reports/latest_results.csv and reports/latest_summary.json")
+    print(
+        "Reports written to reports/latest_results.csv, "
+        "reports/latest_summary.json and reports/latest_comparison.md"
+    )
 
 
 def main() -> None:

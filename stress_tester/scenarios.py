@@ -81,6 +81,70 @@ SCENARIOS: dict[str, dict] = {
         },
         "delay_between_requests_seconds": 0.005,
     },
+    "ollama_normal_load": {
+        "name": "ollama_normal_load",
+        "description": "Steady low-concurrency traffic against local Ollama.",
+        "total_requests": 20,
+        "concurrency": 2,
+        "users": ["user_standard_01"],
+        "models": ["ollama-llama"],
+        "request_type_distribution": {
+            "interactive": 1.0,
+        },
+        "prompt_size_distribution": {
+            "short": 0.8,
+            "medium": 0.2,
+        },
+        "delay_between_requests_seconds": 0.05,
+    },
+    "ollama_burst_load": {
+        "name": "ollama_burst_load",
+        "description": "Small local Ollama burst across standard and VIP users.",
+        "total_requests": 50,
+        "concurrency": 5,
+        "users": ["user_standard_01", "user_vip_01"],
+        "models": ["ollama-llama"],
+        "request_type_distribution": {
+            "interactive": 1.0,
+        },
+        "prompt_size_distribution": {
+            "short": 0.6,
+            "medium": 0.3,
+            "long": 0.1,
+        },
+        "delay_between_requests_seconds": 0.0,
+    },
+    "ollama_vip_protection": {
+        "name": "ollama_vip_protection",
+        "description": "Local Ollama load with standard and VIP users.",
+        "total_requests": 60,
+        "concurrency": 6,
+        "users": ["user_standard_01", "user_vip_01"],
+        "models": ["ollama-llama"],
+        "request_type_distribution": {
+            "interactive": 1.0,
+        },
+        "prompt_size_distribution": {
+            "short": 0.7,
+            "medium": 0.3,
+        },
+        "delay_between_requests_seconds": 0.0,
+    },
+    "ollama_long_prompt": {
+        "name": "ollama_long_prompt",
+        "description": "Sequential long-prompt requests against local Ollama.",
+        "total_requests": 10,
+        "concurrency": 1,
+        "users": ["user_standard_01"],
+        "models": ["ollama-llama"],
+        "request_type_distribution": {
+            "interactive": 1.0,
+        },
+        "prompt_size_distribution": {
+            "long": 1.0,
+        },
+        "delay_between_requests_seconds": 0.1,
+    },
 }
 
 

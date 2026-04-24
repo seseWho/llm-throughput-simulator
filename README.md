@@ -45,7 +45,7 @@ See [docs/development-guide.md](docs/development-guide.md) for setup, mini-check
 
 ## Current Status
 
-Step 10 is implemented: the simulator now includes an optional Ollama backend adapter behind the existing backend selection architecture. Simulated models remain enabled and Ollama remains disabled by default.
+Step 11 is implemented: the stress tester now includes Ollama-specific scenarios and backend/model comparison reporting for simulated versus local Ollama inference.
 
 Implemented foundations:
 
@@ -66,6 +66,8 @@ Implemented foundations:
 - queued request polling in stress tester
 - end-to-end latency reporting
 - optional Ollama backend adapter
+- Ollama stress scenarios
+- backend and model comparison report
 
 Current limitations:
 
@@ -86,6 +88,7 @@ Current limitations:
 - no Ollama streaming yet
 - no advanced Ollama concurrency tuning yet
 - tests do not require Ollama
+- Ollama stress results depend on local CPU/GPU/RAM and model configuration
 
 ## Generate Example
 
@@ -128,13 +131,30 @@ Available scenarios:
 - `vip_protection`
 - `abusive_user`
 - `mixed_load`
+- `ollama_normal_load`
+- `ollama_burst_load`
+- `ollama_vip_protection`
+- `ollama_long_prompt`
 
 Reports are written to:
 
 - `reports/latest_results.csv`
 - `reports/latest_summary.json`
+- `reports/latest_comparison.md`
 
 Polling is enabled by default. Initial latency is the time to receive the first `/generate` response. End-to-end latency is the time until a queued request reaches a final status such as `completed`, `failed`, `rejected`, or `timed_out`.
+
+Ollama scenario examples:
+
+```bash
+python -m stress_tester.load_generator --base-url http://localhost:8000 --scenario ollama_normal_load --poll-queued true --poll-timeout 120
+```
+
+```bash
+python -m stress_tester.load_generator --base-url http://localhost:8000 --scenario ollama_burst_load --poll-queued true --poll-timeout 180
+```
+
+For Ollama scenarios, `ollama-llama` must be manually enabled in `config/models.yaml`, and Ollama must be running locally. Results depend heavily on local CPU/GPU/RAM, model size, and Ollama configuration.
 
 ## Optional Ollama Backend
 

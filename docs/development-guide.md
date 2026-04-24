@@ -57,7 +57,7 @@ python -m pytest
 Expected result:
 
 ```text
-44 passed
+51 passed
 ```
 
 Start the FastAPI backend:
@@ -1022,3 +1022,142 @@ Current Ollama limitations:
 - no streaming yet
 - no advanced Ollama concurrency tuning yet
 - tests use mocks and do not require Ollama installed or running
+
+## Step 11 Ollama Stress Scenario And Comparison Report Validation
+
+Step 11 adds Ollama-specific stress scenarios and comparison reporting by backend and model. Automated tests still do not require Ollama or a running FastAPI backend.
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+51 passed
+```
+
+These tests validate:
+
+- `ollama_normal_load` exists
+- `ollama_burst_load` exists
+- summaries include `requests_by_model`
+- summaries include `requests_by_backend`
+- latency is grouped by model
+- end-to-end latency is grouped by backend
+- Markdown comparison reports can be written
+- existing Step 1-10 behavior still works
+
+Start the backend:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Run a simulated scenario first:
+
+```powershell
+python -m stress_tester.load_generator `
+  --base-url http://127.0.0.1:8000 `
+  --scenario normal_load `
+  --poll-queued true `
+  --poll-timeout 30
+```
+
+Check generated reports:
+
+```powershell
+Get-ChildItem reports
+```
+
+Expected files:
+
+```text
+latest_results.csv
+latest_summary.json
+latest_comparison.md
+```
+
+Check the comparison report:
+
+```powershell
+Get-Content reports/latest_comparison.md
+```
+
+Expected sections:
+
+```text
+Requests By Backend
+Requests By Model
+Latency By Backend
+Latency By Model
+End-To-End Latency By Backend
+End-To-End Latency By Model
+```
+
+Optional Ollama scenario validation:
+
+1. Confirm Ollama has the model:
+
+```powershell
+ollama list
+```
+
+2. Ensure `config/models.yaml` has:
+
+```yaml
+ollama-llama:
+  enabled: true
+```
+
+3. Restart the backend after changing config.
+
+4. Run the Ollama scenario:
+
+```powershell
+python -m stress_tester.load_generator `
+  --base-url http://127.0.0.1:8000 `
+  --scenario ollama_normal_load `
+  --poll-queued true `
+  --poll-timeout 120
+```
+
+Expected console output shape:
+
+```text
+Scenario: ollama_normal_load
+Total requests: 20
+Reports written to reports/latest_results.csv, reports/latest_summary.json and reports/latest_comparison.md
+```
+
+Inspect the summary:
+
+```powershell
+Get-Content reports/latest_summary.json
+```
+
+Expected important fields:
+
+```json
+{
+  "requests_by_backend": {
+    "ollama": 20
+  },
+  "latency_by_backend": {
+    "ollama": {
+      "count": 20
+    }
+  }
+}
+```
+
+Exact values may differ if requests are rejected, queued, failed, or rate-limited.
+
+Ollama stress notes:
+
+- Ollama must be running locally.
+- `ollama-llama` must be manually enabled in config.
+- Results depend heavily on CPU/GPU/RAM, model size, and Ollama configuration.
+- Simulated and Ollama results are not directly equivalent; simulated latency is artificial.
