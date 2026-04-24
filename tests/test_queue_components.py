@@ -145,6 +145,7 @@ def test_worker_manager_can_process_one_queued_simulated_request() -> None:
             payload={
                 "request": request.model_dump(),
                 "model_config": {
+                    "backend": "simulated",
                     "max_output_tokens": 512,
                     "average_latency_seconds": 0,
                     "input_cost_per_1k_tokens_eur": 0.0001,

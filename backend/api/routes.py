@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from backend.core.config_loader import ConfigLoader
 from backend.core.request_models import GenerateRequest
 from backend.core.response_models import GenerateResponse
+from backend.llm_backends.backend_factory import get_llm_backend
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
 from backend.metrics.metrics_collector import MetricsCollector
 from backend.policies.policy_engine import PolicyEngine
@@ -59,12 +60,14 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
 
     model_config = models.get(request.model)
 
-    if model_config.get("backend") != "simulated":
+    try:
+        backend = get_llm_backend(model_config)
+    except ValueError as exc:
         metrics_collector.record_rejected(request, "unsupported_backend")
         raise HTTPException(
             status_code=400,
-            detail="Only simulated backend is supported in Step 7.",
-        )
+            detail=str(exc),
+        ) from exc
 
     global active_requests
     async with active_requests_lock:
@@ -111,7 +114,7 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
 
     try:
         start_time = time.perf_counter()
-        response = await simulated_backend.generate(request, model_config)
+        response = await backend.generate(request, model_config)
         latency_seconds = time.perf_counter() - start_time
         policy_engine.quota_manager.consume(
             request.project_id,

@@ -21,9 +21,11 @@ models:
 
   ollama-llama:
     backend: "ollama"
-    enabled: false
+    enabled: true
     ollama_model: "llama3.1"
+    ollama_base_url: "http://localhost:11434"
     max_input_tokens: 8192
     max_output_tokens: 1024
     input_cost_per_1k_tokens_eur: 0.0
     output_cost_per_1k_tokens_eur: 0.0
+    request_timeout_seconds: 120

@@ -126,3 +126,75 @@ def test_generate_rejects_invalid_user() -> None:
 
     assert response.status_code == 403
     assert response.json()["detail"] == "unknown_user"
+
+
+def test_generate_rejects_disabled_ollama_model(monkeypatch) -> None:
+    class DisabledOllamaConfigLoader:
+        def __init__(self) -> None:
+            self.configs = {
+                "users.yaml": {
+                    "users": {
+                        "user_vip_01": {
+                            "name": "VIP User 01",
+                            "project_id": "vip_project",
+                            "role": "user",
+                            "enabled": True,
+                        },
+                    },
+                },
+                "projects.yaml": {
+                    "projects": {
+                        "vip_project": {
+                            "name": "VIP Project",
+                            "plan": "vip",
+                            "priority": "high",
+                            "monthly_token_quota": 20000000,
+                            "enabled": True,
+                        },
+                    },
+                },
+                "models.yaml": {
+                    "models": {
+                        "ollama-llama": {
+                            "backend": "ollama",
+                            "enabled": False,
+                            "max_output_tokens": 1024,
+                            "input_cost_per_1k_tokens_eur": 0.0,
+                            "output_cost_per_1k_tokens_eur": 0.0,
+                        },
+                    },
+                },
+                "limits.yaml": {
+                    "global_limits": {
+                        "max_active_requests": 50,
+                        "max_queue_size": 1000,
+                    },
+                    "rate_limits": {
+                        "vip": {
+                            "requests_per_minute": 300,
+                            "tokens_per_minute": 500000,
+                        },
+                    },
+                    "priority_weights": {
+                        "high": 10,
+                        "normal": 5,
+                        "low": 1,
+                    },
+                },
+            }
+
+    monkeypatch.setattr(routes, "ConfigLoader", DisabledOllamaConfigLoader)
+
+    response = client.post(
+        "/generate",
+        json={
+            "user_id": "user_vip_01",
+            "project_id": "vip_project",
+            "model": "ollama-llama",
+            "prompt": "hello",
+            "max_tokens": 64,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "model_disabled"

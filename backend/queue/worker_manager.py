@@ -4,6 +4,7 @@ from contextlib import suppress
 
 from backend.core.config_loader import ConfigLoader
 from backend.core.request_models import GenerateRequest
+from backend.llm_backends.backend_factory import get_llm_backend
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
 from backend.metrics.metrics_collector import MetricsCollector
 from backend.policies.policy_engine import PolicyEngine
@@ -79,7 +80,8 @@ class WorkerManager:
                 queue_wait_seconds = time.monotonic() - payload.get("enqueued_at", time.monotonic())
 
                 start_time = time.perf_counter()
-                response = await self.simulated_backend.generate(request, model_config)
+                backend = get_llm_backend(model_config)
+                response = await backend.generate(request, model_config)
                 latency_seconds = time.perf_counter() - start_time
                 result = response.model_dump()
                 result["request_id"] = request_id

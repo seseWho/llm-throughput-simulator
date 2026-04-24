@@ -45,7 +45,7 @@ See [docs/development-guide.md](docs/development-guide.md) for setup, mini-check
 
 ## Current Status
 
-Step 9 is implemented: the stress tester now polls queued requests until completion, failure, rejection, or timeout so reports include end-to-end behavior.
+Step 10 is implemented: the simulator now includes an optional Ollama backend adapter behind the existing backend selection architecture. Simulated models remain enabled and Ollama remains disabled by default.
 
 Implemented foundations:
 
@@ -65,6 +65,7 @@ Implemented foundations:
 - CSV and JSON stress test reports
 - queued request polling in stress tester
 - end-to-end latency reporting
+- optional Ollama backend adapter
 
 Current limitations:
 
@@ -81,7 +82,10 @@ Current limitations:
 - no persistent reporting yet
 - local async stress tester only
 - no distributed load generation
-- no Ollama integration yet
+- Ollama model is disabled by default
+- no Ollama streaming yet
+- no advanced Ollama concurrency tuning yet
+- tests do not require Ollama
 
 ## Generate Example
 
@@ -132,8 +136,52 @@ Reports are written to:
 
 Polling is enabled by default. Initial latency is the time to receive the first `/generate` response. End-to-end latency is the time until a queued request reaches a final status such as `completed`, `failed`, `rejected`, or `timed_out`.
 
+## Optional Ollama Backend
+
+Ollama support is available through the `ollama-llama` model config, but it is disabled by default.
+
+To enable it manually:
+
+1. Install and run Ollama.
+2. Pull the model:
+
+```bash
+ollama pull llama3.1
+```
+
+3. Edit `config/models.yaml` and set:
+
+```yaml
+ollama-llama:
+  enabled: true
+```
+
+4. Start the backend:
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+5. Call `/generate` with:
+
+```json
+{
+  "user_id": "user_vip_01",
+  "project_id": "vip_project",
+  "model": "ollama-llama",
+  "prompt": "Hello from Ollama",
+  "max_tokens": 64
+}
+```
+
+Current Ollama limitations:
+
+- no streaming yet
+- no advanced Ollama concurrency tuning yet
+- tests use mocks and do not require Ollama installed or running
+
 ## Future Steps
 
 1. implement config validation
 2. implement persistent reporting
-3. integrate Ollama
+3. add Ollama streaming support
