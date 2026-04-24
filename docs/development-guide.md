@@ -57,7 +57,7 @@ python -m pytest
 Expected result:
 
 ```text
-1 passed
+32 passed
 ```
 
 Start the FastAPI backend:
@@ -516,3 +516,117 @@ Possible statuses:
 - `not_found`
 
 Manual queue-path note: the default `config/limits.yaml` has `max_active_requests: 50`, so ordinary manual requests usually process immediately. The background worker path is covered by automated tests in this step. Workers, queue state, and request results are in-memory only and are lost when the FastAPI process restarts.
+
+## Step 7 Metrics Validation
+
+Step 7 adds in-memory metrics collection for the simulator. Metrics are updated by both immediate `/generate` processing and background worker completions.
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+32 passed
+```
+
+These tests validate:
+
+- metrics start with zero counters
+- received requests increment `total_requests`
+- queued requests increment `queued_requests`
+- completed requests increment completion, token, and cost totals
+- latency fields are present in the summary
+- `POST /metrics/reset` resets counters
+- existing Step 1-6 behavior still works
+
+Start the API:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Reset metrics:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/metrics/reset"
+```
+
+Expected response:
+
+```text
+status  : ok
+message : Metrics reset
+```
+
+Check empty metrics:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/metrics"
+```
+
+Expected important fields:
+
+```text
+total_requests     : 0
+completed_requests : 0
+queued_requests    : 0
+failed_requests    : 0
+```
+
+Send a valid request:
+
+```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "hello from step 7"
+  max_tokens = 64
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected behavior:
+
+- HTTP `200`
+- `status` is `completed`
+
+Check metrics again:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/metrics"
+```
+
+Expected important fields:
+
+```text
+total_requests           : 1
+accepted_requests        : 1
+completed_requests       : 1
+total_input_tokens       : greater than 0
+total_output_tokens      : 64
+total_estimated_cost_eur : greater than or equal to 0
+average_latency_seconds  : not empty
+p50_latency_seconds      : not empty
+requests_by_user         : includes user_standard_01
+requests_by_project      : includes standard_project
+requests_by_model        : includes simulated-small
+```
+
+Metrics limitations:
+
+- metrics are in-memory only
+- metrics are lost when the FastAPI process restarts
+- there is no Prometheus or Grafana integration yet
+- there is no persistent reporting yet
