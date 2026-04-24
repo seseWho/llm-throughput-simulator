@@ -1,0 +1,29 @@
+models:
+  simulated-small:
+    backend: "simulated"
+    enabled: true
+    priority: "default"
+    max_input_tokens: 4096
+    max_output_tokens: 512
+    input_cost_per_1k_tokens_eur: 0.0001
+    output_cost_per_1k_tokens_eur: 0.0002
+    average_latency_seconds: 0.5
+
+  simulated-large:
+    backend: "simulated"
+    enabled: true
+    priority: "default"
+    max_input_tokens: 8192
+    max_output_tokens: 1024
+    input_cost_per_1k_tokens_eur: 0.0005
+    output_cost_per_1k_tokens_eur: 0.001
+    average_latency_seconds: 2.0
+
+  ollama-llama:
+    backend: "ollama"
+    enabled: false
+    ollama_model: "llama3.1"
+    max_input_tokens: 8192
+    max_output_tokens: 1024
+    input_cost_per_1k_tokens_eur: 0.0
+    output_cost_per_1k_tokens_eur: 0.0

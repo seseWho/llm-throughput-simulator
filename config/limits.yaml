@@ -1,0 +1,23 @@
+global_limits:
+  max_active_requests: 50
+  max_queue_size: 1000
+  max_queue_wait_seconds: 30
+  request_timeout_seconds: 120
+
+rate_limits:
+  standard:
+    requests_per_minute: 60
+    tokens_per_minute: 50000
+
+  vip:
+    requests_per_minute: 300
+    tokens_per_minute: 500000
+
+  batch:
+    requests_per_minute: 20
+    tokens_per_minute: 200000
+
+priority_weights:
+  high: 10
+  normal: 5
+  low: 1

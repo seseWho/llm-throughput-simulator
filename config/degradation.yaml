@@ -1,0 +1,36 @@
+degradation_levels:
+  normal:
+    level: 0
+    queue_usage_threshold: 0.40
+    actions:
+      reduce_max_tokens: false
+      reject_batch: false
+      reject_standard: false
+
+  soft_pressure:
+    level: 1
+    queue_usage_threshold: 0.60
+    actions:
+      reduce_max_tokens: true
+      max_output_token_factor: 0.75
+      reject_batch: false
+      reject_standard: false
+
+  high_pressure:
+    level: 2
+    queue_usage_threshold: 0.80
+    actions:
+      reduce_max_tokens: true
+      max_output_token_factor: 0.50
+      reject_batch: true
+      reject_standard: false
+
+  critical_pressure:
+    level: 3
+    queue_usage_threshold: 0.95
+    actions:
+      reduce_max_tokens: true
+      max_output_token_factor: 0.25
+      reject_batch: true
+      reject_standard: true
+      allow_only_priority: "high"

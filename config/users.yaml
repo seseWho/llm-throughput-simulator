@@ -1,0 +1,24 @@
+users:
+  user_standard_01:
+    name: "Standard User 01"
+    project_id: "standard_project"
+    role: "user"
+    enabled: true
+
+  user_vip_01:
+    name: "VIP User 01"
+    project_id: "vip_project"
+    role: "user"
+    enabled: true
+
+  user_batch_01:
+    name: "Batch User 01"
+    project_id: "batch_project"
+    role: "batch"
+    enabled: true
+
+  admin_01:
+    name: "Admin User"
+    project_id: "vip_project"
+    role: "admin"
+    enabled: true

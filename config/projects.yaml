@@ -1,0 +1,27 @@
+projects:
+  standard_project:
+    name: "Standard Project"
+    plan: "standard"
+    priority: "normal"
+    monthly_token_quota: 1000000
+    monthly_budget_eur: 50
+    max_concurrent_requests: 5
+    enabled: true
+
+  vip_project:
+    name: "VIP Project"
+    plan: "vip"
+    priority: "high"
+    monthly_token_quota: 20000000
+    monthly_budget_eur: 500
+    max_concurrent_requests: 25
+    enabled: true
+
+  batch_project:
+    name: "Batch Processing Project"
+    plan: "batch"
+    priority: "low"
+    monthly_token_quota: 5000000
+    monthly_budget_eur: 100
+    max_concurrent_requests: 3
+    enabled: true
