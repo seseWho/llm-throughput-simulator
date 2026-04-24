@@ -1161,3 +1161,170 @@ Ollama stress notes:
 - `ollama-llama` must be manually enabled in config.
 - Results depend heavily on CPU/GPU/RAM, model size, and Ollama configuration.
 - Simulated and Ollama results are not directly equivalent; simulated latency is artificial.
+
+## Step 12 Degradation Strategy Validation
+
+Step 12 adds degradation policies driven by `config/degradation.yaml`. Degradation is based on queue usage:
+
+```text
+queue_usage_ratio = queue_size / max_queue_size
+```
+
+Run the tests:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+60 passed
+```
+
+These tests validate:
+
+- `normal`, `soft_pressure`, `high_pressure`, and `critical_pressure` level selection
+- max token reduction
+- batch request rejection under high pressure
+- standard request rejection under critical pressure
+- high-priority request preservation
+- `/queue/status` degradation fields
+
+Start the backend:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Check degradation status:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/queue/status"
+```
+
+Expected fields:
+
+```text
+current_degradation_level
+current_degradation_level_number
+queue_usage_ratio
+degradation_actions
+```
+
+With an empty queue, the status should usually be:
+
+```text
+current_degradation_level        : normal
+current_degradation_level_number : 0
+queue_usage_ratio                : 0
+```
+
+### Manual Pressure Test
+
+To trigger degradation manually, temporarily reduce queue capacity in `config/limits.yaml`.
+
+Example for quick saturation:
+
+```yaml
+global_limits:
+  max_active_requests: 1
+  max_queue_size: 2
+  max_queue_wait_seconds: 30
+  request_timeout_seconds: 120
+```
+
+Restart the backend after changing limits.
+
+With `max_queue_size: 2`, thresholds behave like this:
+
+```text
+queue_size 0 -> ratio 0.0 -> normal
+queue_size 1 -> ratio 0.5 -> normal
+queue_size 2 -> ratio 1.0 -> critical_pressure
+```
+
+To observe all levels more gradually, use `max_queue_size: 10`:
+
+```text
+queue_size 6  -> ratio 0.6 -> soft_pressure
+queue_size 8  -> ratio 0.8 -> high_pressure
+queue_size 10 -> ratio 1.0 -> critical_pressure
+```
+
+Run a burst scenario:
+
+```powershell
+python -m stress_tester.load_generator `
+  --base-url http://127.0.0.1:8000 `
+  --scenario burst_load `
+  --poll-queued true `
+  --poll-timeout 30
+```
+
+While it runs, check queue status repeatedly:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/queue/status"
+```
+
+### Batch Rejection Check
+
+When the system is under `high_pressure` or `critical_pressure`, send a batch request:
+
+```powershell
+$body = @{
+  user_id = "user_batch_01"
+  project_id = "batch_project"
+  model = "simulated-small"
+  prompt = "batch request under pressure"
+  max_tokens = 64
+  request_type = "batch"
+} | ConvertTo-Json
+
+try {
+  Invoke-WebRequest `
+    -Method Post `
+    -Uri "http://127.0.0.1:8000/generate" `
+    -ContentType "application/json" `
+    -Body $body
+} catch {
+  $_.Exception.Response.StatusCode.value__
+  $_.ErrorDetails.Message
+}
+```
+
+Expected under high pressure:
+
+```text
+503
+Batch requests rejected due to high system pressure
+```
+
+### VIP Preservation Check
+
+When the system is under `critical_pressure`, send a VIP request:
+
+```powershell
+$body = @{
+  user_id = "user_vip_01"
+  project_id = "vip_project"
+  model = "simulated-small"
+  prompt = "vip request under pressure"
+  max_tokens = 64
+  request_type = "interactive"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected behavior:
+
+- high-priority traffic should not be rejected by the critical degradation rule
+- it may still be processed immediately or queued depending on admission capacity
+
+After manual testing, restore the original `config/limits.yaml` values.
