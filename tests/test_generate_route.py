@@ -39,4 +39,20 @@ def test_generate_rejects_nonexistent_model() -> None:
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Model not found: missing-model"
+    assert response.json()["detail"] == "unknown_model"
+
+
+def test_generate_rejects_invalid_user() -> None:
+    response = client.post(
+        "/generate",
+        json={
+            "user_id": "missing_user",
+            "project_id": "standard_project",
+            "model": "simulated-small",
+            "prompt": "hello",
+            "max_tokens": 64,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "unknown_user"

@@ -214,3 +214,120 @@ FastAPI received the request, but the JSON body did not match the required `Gene
 ```
 
 In PowerShell, prefer building the request body with a hashtable and `ConvertTo-Json`, as shown in the smoke test above.
+
+## Step 4 Policy Engine Validation
+
+Step 4 adds the Policy Engine foundation before the simulated backend. A valid `/generate` request now passes through:
+
+- user validation
+- project validation
+- user/project ownership validation
+- model validation
+- simple rate limiting
+- in-memory quota checking
+- cost estimation
+
+Run the tests first:
+
+```powershell
+python -m pytest
+```
+
+Expected result:
+
+```text
+14 passed
+```
+
+Start the API:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Send a valid request:
+
+```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "hello from step 4"
+  max_tokens = 64
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected behavior:
+
+- HTTP `200`
+- `status` is `completed`
+- token estimates are populated
+- estimated cost is greater than or equal to zero
+
+Send an invalid user request:
+
+```powershell
+$body = @{
+  user_id = "missing_user"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "hello"
+  max_tokens = 64
+} | ConvertTo-Json
+
+try {
+  Invoke-WebRequest `
+    -Method Post `
+    -Uri "http://127.0.0.1:8000/generate" `
+    -ContentType "application/json" `
+    -Body $body
+} catch {
+  $_.Exception.Response.StatusCode.value__
+  $_.ErrorDetails.Message
+}
+```
+
+Expected response:
+
+```text
+403
+{"detail":"unknown_user"}
+```
+
+Send a project mismatch request:
+
+```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "vip_project"
+  model = "simulated-small"
+  prompt = "hello"
+  max_tokens = 64
+} | ConvertTo-Json
+
+try {
+  Invoke-WebRequest `
+    -Method Post `
+    -Uri "http://127.0.0.1:8000/generate" `
+    -ContentType "application/json" `
+    -Body $body
+} catch {
+  $_.Exception.Response.StatusCode.value__
+  $_.ErrorDetails.Message
+}
+```
+
+Expected response:
+
+```text
+403
+{"detail":"project_mismatch"}
+```
+
+PowerShell note: `Invoke-RestMethod` and `Invoke-WebRequest` report non-2xx HTTP responses as exceptions. That does not mean the API failed. For negative validation checks, the exception is expected; inspect the status code and JSON detail in the `catch` block.

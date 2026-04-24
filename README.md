@@ -41,9 +41,24 @@ See [docs/Development Guide.md](docs/Development%20Guide.md) for setup, mini-che
 
 ## Current Status
 
-Step 3 is implemented: the `/generate` endpoint now uses a simulated LLM backend for enabled simulated models.
+Step 4 is implemented: the `/generate` endpoint now evaluates requests through the Policy Engine foundation before calling the simulated LLM backend.
 
-Still not implemented: full queueing, rate limiting, quota management, admission control, priority scheduling, Ollama integration, and stress testing.
+Implemented foundations:
+
+- simulated LLM backend
+- user/project/model validation
+- simple request rate limiting
+- in-memory project token quota tracking
+- estimated token cost calculation
+
+Current limitations:
+
+- usage is stored in memory only
+- rate limiting uses a simple fixed window
+- no priority queue yet
+- no persistence yet
+- no Ollama integration yet
+- no stress tester yet
 
 ## Generate Example
 
