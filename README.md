@@ -47,6 +47,10 @@ GET /usage/recent?limit=50
 
 See [docs/development-guide.md](docs/development-guide.md) for setup, mini-check commands, endpoint smoke tests, current limitations, and suggested next implementation steps.
 
+See [docs/testing_strategies_guide.md](docs/testing_strategies_guide.md) for practical experiments covering load, burst traffic, VIP protection, rate limiting, quota exhaustion, degradation, Ollama comparison, persistence, metrics, and reports.
+
+See [docs/requirements.md](docs/requirements.md) for the requirements specification and [docs/architecture.md](docs/architecture.md) for the logical architecture.
+
 ## Current Status
 
 Step 13 is implemented: request lifecycle and usage accounting are now persisted to local SQLite alongside the existing in-memory metrics.
