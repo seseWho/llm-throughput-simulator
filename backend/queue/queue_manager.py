@@ -1,4 +1,5 @@
 import asyncio
+import time
 from itertools import count
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ class QueueManager:
     async def enqueue(self, priority_score: int, payload: dict) -> str:
         """Add a request payload to the queue and return its queue id."""
         queue_id = str(uuid4())
-        queued_payload = payload | {"queue_id": queue_id}
+        queued_payload = payload | {"queue_id": queue_id, "enqueued_at": time.monotonic()}
         await self._queue.put((-priority_score, next(self._counter), queue_id, queued_payload))
         self.results[queue_id] = {
             "request_id": queue_id,

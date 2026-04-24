@@ -42,6 +42,26 @@ def test_queue_status_returns_expected_fields() -> None:
     assert "failed_requests" in data
 
 
+def test_metrics_reset_resets_counters() -> None:
+    client.post(
+        "/generate",
+        json={
+            "user_id": "user_standard_01",
+            "project_id": "standard_project",
+            "model": "simulated-small",
+            "prompt": "hello",
+            "max_tokens": 64,
+        },
+    )
+
+    reset_response = client.post("/metrics/reset")
+    metrics_response = client.get("/metrics")
+
+    assert reset_response.status_code == 200
+    assert reset_response.json()["status"] == "ok"
+    assert metrics_response.json()["total_requests"] == 0
+
+
 def test_request_status_returns_not_found_for_unknown_id() -> None:
     response = client.get("/requests/unknown-request-id")
 

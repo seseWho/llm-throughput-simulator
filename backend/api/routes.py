@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from fastapi import APIRouter, HTTPException
 
@@ -6,6 +7,7 @@ from backend.core.config_loader import ConfigLoader
 from backend.core.request_models import GenerateRequest
 from backend.core.response_models import GenerateResponse
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
+from backend.metrics.metrics_collector import MetricsCollector
 from backend.policies.policy_engine import PolicyEngine
 from backend.queue.admission_controller import AdmissionController
 from backend.queue.priority_scheduler import PriorityScheduler
@@ -18,11 +20,13 @@ admission_controller = AdmissionController()
 priority_scheduler = PriorityScheduler()
 queue_manager = QueueManager()
 simulated_backend = SimulatedLLMBackend()
+metrics_collector = MetricsCollector()
 worker_manager = WorkerManager(
     queue_manager=queue_manager,
     simulated_backend=simulated_backend,
     policy_engine=policy_engine,
     config_loader=ConfigLoader(),
+    metrics_collector=metrics_collector,
 )
 active_requests = 0
 active_requests_lock = asyncio.Lock()
@@ -31,6 +35,7 @@ active_requests_lock = asyncio.Lock()
 @router.post("/generate", response_model=GenerateResponse)
 async def generate(request: GenerateRequest) -> GenerateResponse:
     """Generate a response using the simulated backend."""
+    metrics_collector.record_received(request)
     config_loader = ConfigLoader()
     users = config_loader.configs["users.yaml"]["users"]
     projects = config_loader.configs["projects.yaml"]["projects"]
@@ -46,6 +51,7 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     )
 
     if not policy_result["allowed"]:
+        metrics_collector.record_rejected(request, policy_result["reason"])
         raise HTTPException(
             status_code=_policy_status_code(policy_result["reason"]),
             detail=policy_result["reason"],
@@ -54,9 +60,10 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     model_config = models.get(request.model)
 
     if model_config.get("backend") != "simulated":
+        metrics_collector.record_rejected(request, "unsupported_backend")
         raise HTTPException(
             status_code=400,
-            detail="Only simulated backend is supported in Step 5.",
+            detail="Only simulated backend is supported in Step 7.",
         )
 
     global active_requests
@@ -71,6 +78,7 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
 
         if admission_decision["decision"] == "accept":
             active_requests += 1
+            metrics_collector.record_accepted(request, policy_result)
         elif admission_decision["decision"] == "queue":
             priority_score = priority_scheduler.get_priority_score(
                 project_priority=policy_result["project_priority"],
@@ -85,6 +93,7 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
                     "policy": policy_result,
                 },
             )
+            metrics_collector.record_queued(request, policy_result)
             return GenerateResponse(
                 request_id=queue_id,
                 status="queued",
@@ -94,18 +103,29 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
                 estimated_cost_eur=policy_result["estimated_cost_eur"],
             )
         else:
+            metrics_collector.record_rejected(request, str(admission_decision["reason"]))
             raise HTTPException(
                 status_code=503,
                 detail=f"Request rejected by admission controller: {admission_decision['reason']}",
             )
 
     try:
+        start_time = time.perf_counter()
         response = await simulated_backend.generate(request, model_config)
+        latency_seconds = time.perf_counter() - start_time
         policy_engine.quota_manager.consume(
             request.project_id,
             policy_result["estimated_total_tokens"],
         )
+        metrics_collector.record_completed(
+            request,
+            response,
+            latency_seconds=latency_seconds,
+        )
         return response
+    except Exception as exc:
+        metrics_collector.record_failed(request, str(exc))
+        raise
     finally:
         async with active_requests_lock:
             active_requests -= 1
@@ -122,9 +142,16 @@ def _policy_status_code(reason: str) -> int:
 
 
 @router.get("/metrics")
-async def metrics() -> dict[str, str]:
-    """Return placeholder metrics."""
-    return {"status": "placeholder", "message": "Metrics collection is not implemented yet."}
+async def metrics() -> dict[str, object]:
+    """Return in-memory metrics summary."""
+    return metrics_collector.get_summary()
+
+
+@router.post("/metrics/reset")
+async def reset_metrics() -> dict[str, str]:
+    """Reset in-memory metrics."""
+    metrics_collector.reset()
+    return {"status": "ok", "message": "Metrics reset"}
 
 
 @router.get("/queue/status")
@@ -143,8 +170,8 @@ async def queue_status() -> dict[str, object]:
         "max_queue_size": int(global_limits["max_queue_size"]),
         "worker_running": worker_manager.is_running(),
         "worker_count": worker_manager.number_of_workers,
-        "completed_requests": queue_manager.completed_count(),
-        "failed_requests": queue_manager.failed_count(),
+        "completed_requests": metrics_collector.completed_requests,
+        "failed_requests": metrics_collector.failed_requests,
     }
 
 

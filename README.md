@@ -35,6 +35,8 @@ The health endpoint is available at:
 GET /health
 GET /queue/status
 GET /requests/{request_id}
+GET /metrics
+POST /metrics/reset
 ```
 
 ## Development Notes
@@ -43,7 +45,7 @@ See [docs/Development Guide.md](docs/Development%20Guide.md) for setup, mini-che
 
 ## Current Status
 
-Step 6 is implemented: queued requests are now processed by in-memory background workers. The `/generate` endpoint can process immediately, enqueue for background processing, or reject according to policy and admission decisions.
+Step 7 is implemented: the simulator now collects in-memory metrics for request flow, queueing, completions, failures, token usage, estimated cost, and latency.
 
 Implemented foundations:
 
@@ -57,6 +59,8 @@ Implemented foundations:
 - background queue workers
 - queue status endpoint
 - request status endpoint
+- metrics summary endpoint
+- metrics reset endpoint
 
 Current limitations:
 
@@ -65,8 +69,12 @@ Current limitations:
 - queue is in-memory only
 - no persistence yet
 - queue and results are lost on restart
+- metrics are in-memory only
+- metrics are lost on restart
 - no distributed queue
 - no distributed workers
+- no Prometheus or Grafana integration yet
+- no persistent reporting yet
 - no Ollama integration yet
 - no stress tester yet
 
@@ -93,8 +101,6 @@ curl http://127.0.0.1:8000/requests/<request_id>
 ## Future Steps
 
 1. implement config validation
-2. implement rate limiter
-3. implement quota manager
-4. implement config validation
-5. implement stress tester
-6. integrate Ollama
+2. implement persistent reporting
+3. implement stress tester
+4. integrate Ollama

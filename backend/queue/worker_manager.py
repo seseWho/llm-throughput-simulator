@@ -1,9 +1,11 @@
 import asyncio
+import time
 from contextlib import suppress
 
 from backend.core.config_loader import ConfigLoader
 from backend.core.request_models import GenerateRequest
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
+from backend.metrics.metrics_collector import MetricsCollector
 from backend.policies.policy_engine import PolicyEngine
 from backend.queue.queue_manager import QueueManager
 
@@ -18,12 +20,14 @@ class WorkerManager:
         policy_engine: PolicyEngine,
         config_loader: ConfigLoader,
         number_of_workers: int = 3,
+        metrics_collector: MetricsCollector | None = None,
     ) -> None:
         self.queue_manager = queue_manager
         self.simulated_backend = simulated_backend
         self.policy_engine = policy_engine
         self.config_loader = config_loader
         self.number_of_workers = number_of_workers
+        self.metrics_collector = metrics_collector
         self._tasks: list[asyncio.Task] = []
         self._stop_event = asyncio.Event()
         self._running = False
@@ -72,8 +76,11 @@ class WorkerManager:
                 request = GenerateRequest(**payload["request"])
                 model_config = payload["model_config"]
                 policy_result = payload["policy"]
+                queue_wait_seconds = time.monotonic() - payload.get("enqueued_at", time.monotonic())
 
+                start_time = time.perf_counter()
                 response = await self.simulated_backend.generate(request, model_config)
+                latency_seconds = time.perf_counter() - start_time
                 result = response.model_dump()
                 result["request_id"] = request_id
                 self.queue_manager.set_result(request_id, result)
@@ -81,8 +88,17 @@ class WorkerManager:
                     request.project_id,
                     policy_result["estimated_total_tokens"],
                 )
+                if self.metrics_collector is not None:
+                    self.metrics_collector.record_completed(
+                        request,
+                        result,
+                        latency_seconds=latency_seconds,
+                        queue_wait_seconds=queue_wait_seconds,
+                    )
             except Exception as exc:
                 self.queue_manager.mark_failed(request_id, str(exc))
+                if self.metrics_collector is not None:
+                    self.metrics_collector.record_failed(payload.get("request", {}), str(exc))
 
     def is_running(self) -> bool:
         """Return whether worker tasks are currently running."""
