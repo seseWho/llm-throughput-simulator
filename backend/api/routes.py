@@ -1,25 +1,34 @@
-from uuid import uuid4
-
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from backend.core.config_loader import ConfigLoader
 from backend.core.request_models import GenerateRequest
 from backend.core.response_models import GenerateResponse
+from backend.llm_backends.simulated_backend import SimulatedLLMBackend
 
 router = APIRouter()
 
 
 @router.post("/generate", response_model=GenerateResponse)
 async def generate(request: GenerateRequest) -> GenerateResponse:
-    """Return a placeholder generation response."""
-    return GenerateResponse(
-        request_id=str(uuid4()),
-        status="accepted",
-        message="Generation placeholder response. Full serving logic is not implemented yet.",
-        estimated_input_tokens=None,
-        estimated_output_tokens=request.max_tokens,
-        estimated_cost_eur=None,
-    )
+    """Generate a response using the simulated backend."""
+    config_loader = ConfigLoader()
+    models = config_loader.configs["models.yaml"]["models"]
+    model_config = models.get(request.model)
+
+    if model_config is None:
+        raise HTTPException(status_code=404, detail=f"Model not found: {request.model}")
+
+    if not model_config.get("enabled", False):
+        raise HTTPException(status_code=400, detail=f"Model is disabled: {request.model}")
+
+    if model_config.get("backend") != "simulated":
+        raise HTTPException(
+            status_code=400,
+            detail="Only simulated backend is supported in Step 3.",
+        )
+
+    backend = SimulatedLLMBackend()
+    return await backend.generate(request, model_config)
 
 
 @router.get("/metrics")

@@ -41,14 +41,29 @@ See [docs/Development Guide.md](docs/Development%20Guide.md) for setup, mini-che
 
 ## Current Status
 
-Basic structure only. Full serving, queueing, policy, quota, backend, and stress testing logic has not been implemented yet.
+Step 3 is implemented: the `/generate` endpoint now uses a simulated LLM backend for enabled simulated models.
+
+Still not implemented: full queueing, rate limiting, quota management, admission control, priority scheduling, Ollama integration, and stress testing.
+
+## Generate Example
+
+```bash
+curl -X POST http://127.0.0.1:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user_standard_01",
+    "project_id": "standard_project",
+    "model": "simulated-small",
+    "prompt": "Hello from the simulator",
+    "max_tokens": 64
+  }'
+```
 
 ## Future Steps
 
 1. implement config validation
-2. implement simulated backend
-3. implement rate limiter
-4. implement quota manager
-5. implement priority queue
-6. implement stress tester
-7. integrate Ollama
+2. implement rate limiter
+3. implement quota manager
+4. implement priority queue
+5. implement stress tester
+6. integrate Ollama

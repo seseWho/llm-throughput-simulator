@@ -107,18 +107,33 @@ Expected behavior:
 Check the placeholder generation endpoint:
 
 ```powershell
+$body = @{
+  user_id = "user_standard_01"
+  project_id = "standard_project"
+  model = "simulated-small"
+  prompt = "hello"
+  max_tokens = 64
+} | ConvertTo-Json
+
 Invoke-RestMethod `
   -Method Post `
-  -Uri http://127.0.0.1:8000/generate `
+  -Uri "http://127.0.0.1:8000/generate" `
   -ContentType "application/json" `
-  -Body '{"user_id":"user_standard_01","project_id":"standard_project","model":"simulated-small","prompt":"hello","max_tokens":64}'
+  -Body $body
 ```
 
 Expected behavior:
 
-- Returns a placeholder response.
-- `status` should be `accepted`.
+- Returns a simulated generation response.
+- `status` should be `completed`.
+- `estimated_input_tokens`, `estimated_output_tokens`, and `estimated_cost_eur` should be populated.
 - No real LLM backend is called.
+
+You can also test the endpoint through the FastAPI docs:
+
+```text
+http://127.0.0.1:8000/docs
+```
 
 ## Configuration Files
 
@@ -170,3 +185,32 @@ python -m uvicorn backend.main:app --reload
 ```
 
 If `/config/summary` fails, check that the command is being run from the repository root so the relative `config/` directory can be found.
+
+If the server logs show this after opening the browser at the base URL:
+
+```text
+GET / HTTP/1.1" 404 Not Found
+GET /favicon.ico HTTP/1.1" 404 Not Found
+```
+
+That is expected. The project does not define a root HTML page yet. Use `/health`, `/config/summary`, `/generate`, or `/docs`.
+
+If `/generate` returns:
+
+```text
+422 Unprocessable Content
+```
+
+FastAPI received the request, but the JSON body did not match the required `GenerateRequest` schema. Make sure the body includes:
+
+```json
+{
+  "user_id": "user_standard_01",
+  "project_id": "standard_project",
+  "model": "simulated-small",
+  "prompt": "hello",
+  "max_tokens": 64
+}
+```
+
+In PowerShell, prefer building the request body with a hashtable and `ConvertTo-Json`, as shown in the smoke test above.
