@@ -45,7 +45,7 @@ See [docs/development-guide.md](docs/development-guide.md) for setup, mini-check
 
 ## Current Status
 
-Step 11 is implemented: the stress tester now includes Ollama-specific scenarios and backend/model comparison reporting for simulated versus local Ollama inference.
+Step 12 is implemented: degradation strategy is now driven by `config/degradation.yaml` so the service can progressively protect itself under queue pressure.
 
 Implemented foundations:
 
@@ -68,6 +68,7 @@ Implemented foundations:
 - optional Ollama backend adapter
 - Ollama stress scenarios
 - backend and model comparison report
+- configuration-driven degradation strategy
 
 Current limitations:
 
@@ -199,6 +200,31 @@ Current Ollama limitations:
 - no streaming yet
 - no advanced Ollama concurrency tuning yet
 - tests use mocks and do not require Ollama installed or running
+
+## Degradation Strategy
+
+Degradation is based on queue usage ratio:
+
+```text
+queue_usage_ratio = queue_size / max_queue_size
+```
+
+Configured levels:
+
+- `normal`: no degradation actions.
+- `soft_pressure`: reduces requested `max_tokens`.
+- `high_pressure`: reduces `max_tokens` and rejects batch requests.
+- `critical_pressure`: reduces `max_tokens`, rejects batch requests, rejects standard traffic, and preserves high-priority traffic.
+
+The degradation rules are configured in `config/degradation.yaml`.
+
+Current behavior:
+
+- degradation runs after policy validation and before admission control
+- degraded `max_tokens` are applied to a copied request object
+- token and cost estimates are recalculated when `max_tokens` changes
+- queued payloads contain the degraded request, not the original request
+- `/queue/status` exposes the current degradation level and active actions
 
 ## Future Steps
 

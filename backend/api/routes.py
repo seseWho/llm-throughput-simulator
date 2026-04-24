@@ -9,6 +9,7 @@ from backend.core.response_models import GenerateResponse
 from backend.llm_backends.backend_factory import get_llm_backend
 from backend.llm_backends.simulated_backend import SimulatedLLMBackend
 from backend.metrics.metrics_collector import MetricsCollector
+from backend.policies.degradation_manager import DegradationManager
 from backend.policies.policy_engine import PolicyEngine
 from backend.queue.admission_controller import AdmissionController
 from backend.queue.priority_scheduler import PriorityScheduler
@@ -17,6 +18,7 @@ from backend.queue.worker_manager import WorkerManager
 
 router = APIRouter()
 policy_engine = PolicyEngine()
+degradation_manager = DegradationManager()
 admission_controller = AdmissionController()
 priority_scheduler = PriorityScheduler()
 queue_manager = QueueManager()
@@ -42,6 +44,7 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
     projects = config_loader.configs["projects.yaml"]["projects"]
     models = config_loader.configs["models.yaml"]["models"]
     limits = config_loader.configs["limits.yaml"]
+    degradation = config_loader.configs["degradation.yaml"]
 
     policy_result = policy_engine.evaluate_request(
         request=request,
@@ -57,6 +60,42 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
             status_code=_policy_status_code(policy_result["reason"]),
             detail=policy_result["reason"],
         )
+
+    current_degradation_level = degradation_manager.get_current_level(
+        queue_size=queue_manager.size(),
+        limits_config=limits,
+        degradation_config=degradation,
+    )
+    degradation_result = degradation_manager.apply_degradation(
+        request=request,
+        policy_result=policy_result,
+        current_level=current_degradation_level,
+    )
+
+    if degradation_result["actions_applied"]:
+        metrics_collector.record_degraded(request, degradation_result)
+
+    if not degradation_result["allowed"]:
+        metrics_collector.record_rejected(request, degradation_result["reason"])
+        raise HTTPException(status_code=503, detail=degradation_result["reason"])
+
+    if degradation_result["modified_max_tokens"] != request.max_tokens:
+        request = request.model_copy(
+            update={"max_tokens": degradation_result["modified_max_tokens"]}
+        )
+        policy_result = policy_engine.evaluate_request(
+            request=request,
+            users_config=users,
+            projects_config=projects,
+            models_config=models,
+            limits_config=limits,
+        )
+        if not policy_result["allowed"]:
+            metrics_collector.record_rejected(request, policy_result["reason"])
+            raise HTTPException(
+                status_code=_policy_status_code(policy_result["reason"]),
+                detail=policy_result["reason"],
+            )
 
     model_config = models.get(request.model)
 
@@ -161,7 +200,13 @@ async def reset_metrics() -> dict[str, str]:
 async def queue_status() -> dict[str, object]:
     """Return in-memory queue and active request status."""
     config_loader = ConfigLoader()
-    global_limits = config_loader.configs["limits.yaml"]["global_limits"]
+    limits = config_loader.configs["limits.yaml"]
+    global_limits = limits["global_limits"]
+    current_degradation_level = degradation_manager.get_current_level(
+        queue_size=queue_manager.size(),
+        limits_config=limits,
+        degradation_config=config_loader.configs["degradation.yaml"],
+    )
 
     async with active_requests_lock:
         current_active_requests = active_requests
@@ -171,6 +216,10 @@ async def queue_status() -> dict[str, object]:
         "active_requests": current_active_requests,
         "max_active_requests": int(global_limits["max_active_requests"]),
         "max_queue_size": int(global_limits["max_queue_size"]),
+        "current_degradation_level": current_degradation_level["name"],
+        "current_degradation_level_number": current_degradation_level["level"],
+        "queue_usage_ratio": current_degradation_level["queue_usage_ratio"],
+        "degradation_actions": current_degradation_level.get("actions", {}),
         "worker_running": worker_manager.is_running(),
         "worker_count": worker_manager.number_of_workers,
         "completed_requests": metrics_collector.completed_requests,

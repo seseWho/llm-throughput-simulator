@@ -29,6 +29,11 @@ class MetricsCollector:
         self.rejected_requests += 1
         self._increment(self.requests_by_status, "rejected")
 
+    def record_degraded(self, request: Any, degradation_result: dict) -> None:
+        """Record a request affected by degradation actions."""
+        self.degraded_requests += 1
+        self._increment(self.requests_by_status, "degraded")
+
     def record_completed(
         self,
         request: Any,
@@ -71,6 +76,7 @@ class MetricsCollector:
             "rejected_requests": self.rejected_requests,
             "completed_requests": self.completed_requests,
             "failed_requests": self.failed_requests,
+            "degraded_requests": self.degraded_requests,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
             "total_estimated_cost_eur": self.total_estimated_cost_eur,
@@ -97,6 +103,7 @@ class MetricsCollector:
         self.rejected_requests = 0
         self.completed_requests = 0
         self.failed_requests = 0
+        self.degraded_requests = 0
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_estimated_cost_eur = 0.0

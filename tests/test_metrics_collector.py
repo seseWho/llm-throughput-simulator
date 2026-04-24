@@ -12,6 +12,7 @@ def test_metrics_collector_starts_with_zero_counters() -> None:
     assert summary["rejected_requests"] == 0
     assert summary["completed_requests"] == 0
     assert summary["failed_requests"] == 0
+    assert summary["degraded_requests"] == 0
 
 
 def test_record_received_increments_total_requests() -> None:

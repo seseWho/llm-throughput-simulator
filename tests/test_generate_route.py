@@ -40,6 +40,10 @@ def test_queue_status_returns_expected_fields() -> None:
     assert "worker_count" in data
     assert "completed_requests" in data
     assert "failed_requests" in data
+    assert "current_degradation_level" in data
+    assert "current_degradation_level_number" in data
+    assert "queue_usage_ratio" in data
+    assert "degradation_actions" in data
 
 
 def test_metrics_reset_resets_counters() -> None:
@@ -179,6 +183,19 @@ def test_generate_rejects_disabled_ollama_model(monkeypatch) -> None:
                         "high": 10,
                         "normal": 5,
                         "low": 1,
+                    },
+                },
+                "degradation.yaml": {
+                    "degradation_levels": {
+                        "normal": {
+                            "level": 0,
+                            "queue_usage_threshold": 0.40,
+                            "actions": {
+                                "reduce_max_tokens": False,
+                                "reject_batch": False,
+                                "reject_standard": False,
+                            },
+                        },
                     },
                 },
             }
