@@ -1,9 +1,32 @@
 [project]
-name = "llm-load-mvp"
+name = "llm-throughput-simulator"
 version = "0.1.0"
 description = "MVP project for an LLM high-throughput serving simulator."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Sergio Sesena", email = "sergio.sesena@gmail.com" },
+]
+keywords = [
+    "llm",
+    "simulator",
+    "throughput",
+    "fastapi",
+    "asyncio",
+    "queueing",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Benchmark",
+]
 dependencies = [
     "fastapi",
     "uvicorn",
@@ -17,9 +40,20 @@ dev = [
     "pytest",
 ]
 
+[project.urls]
+Homepage = "https://github.com/SeseWho/llm-throughput-simulator"
+Repository = "https://github.com/SeseWho/llm-throughput-simulator"
+
+[project.scripts]
+llm-throughput-stress = "stress_tester.load_generator:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["backend*", "stress_tester*"]
+
 [tool.pytest.ini_options]
+addopts = "-ra"
 testpaths = ["tests"]
