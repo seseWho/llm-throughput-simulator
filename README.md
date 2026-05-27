@@ -265,8 +265,178 @@ Current persistence limitations:
 - no authentication on usage endpoints yet
 - in-memory metrics reset on restart, while SQLite records remain
 
+## HumanEval Quality Evaluation
+
+The `quality_eval` module evaluates LLM code generation quality using the
+[HumanEval](https://github.com/openai/human-eval) benchmark (164 Python problems).
+It runs problems through the simulator `/generate` endpoint and measures **pass@1**
+alongside latency and cost metrics already tracked by the simulator.
+
+### Install extra dependency
+
+```bash
+pip install -e ".[dev]"
+```
+
+`datasets` is included in the dev extras. For reading the downloaded Parquet files
+`pyarrow` is required (installed automatically with `datasets`).
+
+### Download the HumanEval dataset
+
+```bash
+hf download openai/openai_humaneval --repo-type dataset --local-dir ./data/openai_humaneval
+```
+
+This places the dataset at `data/openai_humaneval/openai_humaneval/test-00000-of-00001.parquet`.
+The runner detects the format automatically — no extra configuration needed.
+
+### Verify the pipeline (simulated backend, no Ollama required)
+
+Start the backend in one terminal:
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+Run 3 problems with the simulated backend to confirm the pipeline works end to end:
+
+```bash
+python -m quality_eval.humaneval_runner \
+  --model simulated-small \
+  --user-id user_standard_01 \
+  --project-id standard_project \
+  --num-problems 3 \
+  --concurrency 1 \
+  --local-dataset data/openai_humaneval
+```
+
+Expected output (pass@1 will be 0% — the simulated backend returns fake text):
+
+```
+Loaded 3 HumanEval problems.
+Model: simulated-small | Concurrency: 1 | max_tokens: 1024
+  [  1/3] HumanEval/0 — FAIL | latency=0.5s | error=execution_error
+  [  2/3] HumanEval/1 — FAIL | latency=0.5s | error=execution_error
+  [  3/3] HumanEval/2 — FAIL | latency=0.5s | error=execution_error
+
+--- Results for simulated-small ---
+  pass@1 : 0.0%  (0/3)
+```
+
+### Run quality evaluation with a real model
+
+Enable the model in `config/models.yaml` (`enabled: true`) and pull it with Ollama:
+
+```bash
+ollama pull qwen2.5:14b-instruct
+```
+
+Run 20 problems (minimum recommended for a meaningful pass@1):
+
+```bash
+python -m quality_eval.humaneval_runner \
+  --model ollama-llama \
+  --user-id user_vip_01 \
+  --project-id vip_project \
+  --num-problems 20 \
+  --concurrency 1 \
+  --max-tokens 1024 \
+  --poll-timeout 120 \
+  --local-dataset data/openai_humaneval
+```
+
+Example output:
+
+```
+Loaded 20 HumanEval problems.
+Model: ollama-llama | Concurrency: 1 | max_tokens: 1024
+  [  1/20] HumanEval/0  — FAIL | latency=1.98s | error=execution_error
+  [  2/20] HumanEval/1  — PASS | latency=3.63s | error=None
+  ...
+  [ 20/20] HumanEval/19 — PASS | latency=5.44s | error=None
+
+--- Results for ollama-llama ---
+  pass@1 : 40.0%  (8/20)
+  P95 latency : 5.44s
+  Total cost  : €0.000000
+```
+
+### Analyze the results
+
+Reports are written to:
+
+```text
+reports/quality_results.csv     — one row per problem with pass, latency, tokens, error
+reports/quality_summary.json    — aggregate: pass@1, latency percentiles, cost, error breakdown
+reports/quality_report.md       — human-readable summary for sharing with the group
+```
+
+Quick inspection in PowerShell:
+
+```powershell
+# Per-problem results
+Import-Csv reports/quality_results.csv |
+  Select-Object task_id, passed, error_type, latency_seconds |
+  Format-Table
+
+# Summary
+Get-Content reports/quality_summary.json
+
+# Markdown report
+Get-Content reports/quality_report.md
+```
+
+### Interpreting results
+
+| Metric | What it tells you |
+|---|---|
+| `pass@1` | Fraction of problems solved correctly on the first attempt |
+| `execution_error` — `AssertionError` | Model generated valid code but wrong logic |
+| `execution_error` — `IndentationError` | Likely a prompt or extraction artifact, not a model failure |
+| `execution_timeout` | Model output is too slow or generated an infinite loop |
+| `simulator_rejected` | Simulator refused the request (rate limit, quota, capacity) |
+
+**Key insight:** `IndentationError` failures are often caused by how the model formats
+its response rather than by a lack of capability. If you see many of these, the pass@1
+is an underestimate of the model's true quality.
+
+### Compare multiple models
+
+Run the same command changing only `--model` for each model under evaluation:
+
+```bash
+python -m quality_eval.humaneval_runner --model ollama-llama   --num-problems 20 ...
+python -m quality_eval.humaneval_runner --model ollama-gemma4  --num-problems 20 ...
+python -m quality_eval.humaneval_runner --model ollama-qwen    --num-problems 20 ...
+```
+
+Then compare `reports/quality_summary.json` across runs. A reference comparison:
+
+```
+Model           Problems  pass@1   P95 latency   Cost/passed
+ollama-llama    20        40.0%    5.44s         €0.000000
+ollama-gemma4   20        —        —             —
+ollama-qwen     20        —        —             —
+```
+
+### Available CLI options
+
+```text
+--base-url        Simulator URL (default: http://127.0.0.1:8000)
+--model           Model name as defined in config/models.yaml
+--user-id         User ID for requests (default: user_vip_01)
+--project-id      Project ID for requests (default: vip_project)
+--num-problems    Number of HumanEval problems to evaluate, max 164 (default: 20)
+--concurrency     Concurrent requests to the simulator (default: 2)
+--max-tokens      Max tokens for code generation (default: 1024)
+--poll-timeout    Seconds to wait for a queued request (default: 120)
+--code-timeout    Seconds allowed for generated code to execute (default: 10)
+--local-dataset   Path to local dataset directory or .jsonl/.parquet file
+```
+
 ## Future Steps
 
 1. implement config validation
 2. implement persistent reporting dashboards
 3. add Ollama streaming support
+4. add multi-model quality comparison report

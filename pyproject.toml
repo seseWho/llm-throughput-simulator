@@ -38,6 +38,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "datasets",
 ]
 
 [project.urls]
@@ -52,7 +53,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["backend*", "stress_tester*"]
+include = ["backend*", "stress_tester*", "quality_eval*"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

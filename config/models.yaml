@@ -22,10 +22,32 @@ models:
   ollama-llama:
     backend: "ollama"
     enabled: true
-    ollama_model: "llama3.1"
+    ollama_model: "qwen2.5:14b-instruct"
     ollama_base_url: "http://localhost:11434"
     max_input_tokens: 8192
     max_output_tokens: 1024
     input_cost_per_1k_tokens_eur: 0.0
     output_cost_per_1k_tokens_eur: 0.0
     request_timeout_seconds: 120
+
+  ollama-gemma4:
+    backend: "ollama"
+    enabled: false
+    ollama_model: "gemma3:12b"
+    ollama_base_url: "http://localhost:11434"
+    max_input_tokens: 8192
+    max_output_tokens: 2048
+    input_cost_per_1k_tokens_eur: 0.0
+    output_cost_per_1k_tokens_eur: 0.0
+    request_timeout_seconds: 180
+
+  ollama-qwen:
+    backend: "ollama"
+    enabled: false
+    ollama_model: "qwen2.5-coder:7b"
+    ollama_base_url: "http://localhost:11434"
+    max_input_tokens: 32768
+    max_output_tokens: 2048
+    input_cost_per_1k_tokens_eur: 0.0
+    output_cost_per_1k_tokens_eur: 0.0
+    request_timeout_seconds: 180
